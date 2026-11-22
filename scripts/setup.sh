@@ -121,6 +121,7 @@ cat > "$temp_file" <<EOF
 server:
   address: 127.0.0.1
   port: 8080
+  forward-headers-strategy: framework
   shutdown: graceful
   compression:
     enabled: false
@@ -203,6 +204,16 @@ app:
         max-requests: 10
         window: 1m
         key-prefix: javara:external:login
+      register:
+        enabled: true
+        max-requests: 5
+        window: 1h
+        key-prefix: javara:external:register
+      refresh:
+        enabled: true
+        max-requests: 30
+        window: 1m
+        key-prefix: javara:external:refresh
 EOF
 chmod 600 "$temp_file"
 mv "$temp_file" config/application.yml

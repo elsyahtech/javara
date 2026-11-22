@@ -15,17 +15,17 @@ import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.RedisConnectionFailureException;
 
-import com.elsyah.tech.javara.middleware.ratelimit.LoginRateLimitExceededException;
+import com.elsyah.tech.javara.middleware.ratelimit.AuthRateLimiter;
+import com.elsyah.tech.javara.middleware.ratelimit.RateLimitExceededException;
 import com.elsyah.tech.javara.middleware.ratelimit.LoginRateLimitProperties;
-import com.elsyah.tech.javara.middleware.ratelimit.LoginRateLimitUnavailableException;
-import com.elsyah.tech.javara.middleware.ratelimit.LoginRateLimiter;
-import com.elsyah.tech.javara.middleware.store.RedisLoginRateLimitStore;
+import com.elsyah.tech.javara.middleware.ratelimit.RateLimitUnavailableException;
+import com.elsyah.tech.javara.middleware.store.RedisRateLimitStore;
 
-class LoginRateLimiterTests {
-    private final RedisLoginRateLimitStore store = mock(RedisLoginRateLimitStore.class);
+class AuthRateLimiterTests {
+    private final RedisRateLimitStore store = mock(RedisRateLimitStore.class);
     private final LoginRateLimitProperties properties = new LoginRateLimitProperties(
             10, Duration.ofMinutes(1), "test:login", true);
-    private final LoginRateLimiter limiter = new LoginRateLimiter(store, properties);
+    private final AuthRateLimiter limiter = new AuthRateLimiter(store);
 
     // Verifies that an allowed request is charged against a hashed client IP key.
     @Test
@@ -34,7 +34,7 @@ class LoginRateLimiterTests {
                 anyString(), eq(10), eq(Duration.ofMinutes(1))))
                 .thenReturn(0L);
 
-        limiter.checkAllowed("192.0.2.10");
+        limiter.checkAllowed("192.0.2.10", properties);
 
         org.mockito.ArgumentCaptor<String> key = org.mockito.ArgumentCaptor.forClass(String.class);
         verify(store).incrementAndGetRetryAfterMillis(
@@ -50,9 +50,9 @@ class LoginRateLimiterTests {
                 anyString(), eq(10), eq(Duration.ofMinutes(1))))
                 .thenReturn(1501L);
 
-        LoginRateLimitExceededException exception = assertThrows(
-                LoginRateLimitExceededException.class,
-                () -> limiter.checkAllowed("192.0.2.10"));
+        RateLimitExceededException exception = assertThrows(
+                RateLimitExceededException.class,
+                () -> limiter.checkAllowed("192.0.2.10", properties));
 
         assertEquals(2, exception.getRetryAfterSeconds());
     }
@@ -65,7 +65,7 @@ class LoginRateLimiterTests {
                 .thenThrow(new RedisConnectionFailureException("Redis unavailable"));
 
         assertThrows(
-                LoginRateLimitUnavailableException.class,
-                () -> limiter.checkAllowed("192.0.2.10"));
+                RateLimitUnavailableException.class,
+                () -> limiter.checkAllowed("192.0.2.10", properties));
     }
 }

@@ -8,38 +8,37 @@ import java.util.HexFormat;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Component;
 
-import com.elsyah.tech.javara.middleware.store.RedisLoginRateLimitStore;
+import com.elsyah.tech.javara.middleware.store.RedisRateLimitStore;
 
 @Component
-public class LoginRateLimiter {
-    private final RedisLoginRateLimitStore store;
-    private final LoginRateLimitProperties properties;
+public class AuthRateLimiter {
+    private final RedisRateLimitStore store;
 
-    public LoginRateLimiter(
-            RedisLoginRateLimitStore store,
-            LoginRateLimitProperties properties) {
+    public AuthRateLimiter(RedisRateLimitStore store) {
         this.store = store;
-        this.properties = properties;
     }
 
-    public void checkAllowed(String clientIp) {
+    public void checkAllowed(String clientIp, RateLimitSettings settings) {
         if (clientIp == null || clientIp.isBlank()) {
             throw new IllegalArgumentException("Client IP must not be blank");
+        }
+        if (settings == null) {
+            throw new IllegalArgumentException("Rate limit settings must not be null");
         }
 
         long retryAfterMillis;
         try {
-            String key = properties.keyPrefix() + ":ip:" + hash(clientIp);
+            String key = settings.keyPrefix() + ":ip:" + hash(clientIp);
             retryAfterMillis = store.incrementAndGetRetryAfterMillis(
                     key,
-                    properties.maxRequests(),
-                    properties.window());
+                    settings.maxRequests(),
+                    settings.window());
         } catch (DataAccessException | IllegalStateException exception) {
-            throw new LoginRateLimitUnavailableException(exception);
+            throw new RateLimitUnavailableException(exception);
         }
 
         if (retryAfterMillis > 0) {
-            throw new LoginRateLimitExceededException(retryAfterMillis);
+            throw new RateLimitExceededException(retryAfterMillis);
         }
     }
 

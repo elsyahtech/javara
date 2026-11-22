@@ -9,7 +9,7 @@ import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
 @Component
-public class RedisLoginRateLimitStore {
+public class RedisRateLimitStore {
     private static final RedisScript<Long> INCREMENT_AND_CHECK_SCRIPT = new DefaultRedisScript<>("""
             local count = redis.call('INCR', KEYS[1])
             local ttl = redis.call('PTTL', KEYS[1])
@@ -25,7 +25,7 @@ public class RedisLoginRateLimitStore {
 
     private final StringRedisTemplate redisTemplate;
 
-    public RedisLoginRateLimitStore(StringRedisTemplate redisTemplate) {
+    public RedisRateLimitStore(StringRedisTemplate redisTemplate) {
         this.redisTemplate = redisTemplate;
     }
 

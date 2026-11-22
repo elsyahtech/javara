@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import jakarta.servlet.http.Cookie;
 
+import java.util.UUID;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -16,8 +18,13 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import com.elsyah.tech.javara.entity.UserEntity;
+import com.elsyah.tech.javara.request.LoginRequest;
+import com.elsyah.tech.javara.service.AuthService;
 import com.elsyah.tech.javara.service.AccessTokenService;
 import com.elsyah.tech.javara.testsupport.PostgresRedisTestSupport;
+import com.elsyah.tech.javara.repository.RefreshTokenRepository;
+import com.elsyah.tech.javara.repository.UserRepository;
+import com.elsyah.tech.javara.utils.security.PasswordHashService;
 
 @SpringBootTest(properties = {
         "app.security.jwt.signing-key=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
@@ -32,6 +39,18 @@ class CookieSecurityIntegrationTests extends PostgresRedisTestSupport {
 
     @Autowired
     private AccessTokenService accessTokenService;
+
+    @Autowired
+    private AuthService authService;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private RefreshTokenRepository refreshTokenRepository;
+
+    @Autowired
+    private PasswordHashService passwordHashService;
 
     // Verifies that cookie mode requires CSRF and accepts the issued CSRF cookie/header pair.
     @Test
@@ -77,5 +96,36 @@ class CookieSecurityIntegrationTests extends PostgresRedisTestSupport {
         mockMvc.perform(get("/api/v1/users")
                         .cookie(new Cookie("ACCESS_TOKEN", token)))
                 .andExpect(status().isForbidden());
+    }
+
+    // Verifies that an expired access cookie does not prevent logout with a valid refresh cookie.
+    @Test
+    void logoutRevokesRefreshTokenWhenAccessCookieIsExpired() throws Exception {
+        String email = UUID.randomUUID() + "@example.com";
+        String password = "logout-test-password";
+        UserEntity user = new UserEntity();
+        user.setId(UUID.randomUUID().toString());
+        user.setEmail(email);
+        user.setPassword(passwordHashService.encode(password));
+        userRepository.saveAndFlush(user);
+
+        String refreshToken = authService.login(new LoginRequest(email, password)).refreshToken();
+
+        MvcResult csrfResult = mockMvc.perform(get("/api/v1/auth/csrf"))
+                .andExpect(status().isOk())
+                .andReturn();
+        String csrfToken = csrfResult.getResponse().getCookie("XSRF-TOKEN").getValue();
+
+        mockMvc.perform(post("/api/v1/auth/logout")
+                        .cookie(
+                                new Cookie("XSRF-TOKEN", csrfToken),
+                                new Cookie("ACCESS_TOKEN", "expired-access-token"),
+                                new Cookie("REFRESH_TOKEN", refreshToken))
+                        .header("X-XSRF-TOKEN", csrfToken))
+                .andExpect(status().isOk());
+
+        assertTrue(refreshTokenRepository
+                .findByUserIdAndRevokedAtIsNull(user.getId())
+                .isEmpty());
     }
 }

@@ -7,7 +7,6 @@ import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.HexFormat;
-import java.util.List;
 import java.util.Optional;
 
 import org.springframework.http.HttpStatus;
@@ -60,8 +59,16 @@ public class AuthService {
         }
 
         LocalDateTime now = LocalDateTime.now();
+        String tokenHash = hashToken(rawRefreshToken);
+        Optional<String> tokenUserId = refreshTokenRepository.findUserIdByTokenHash(tokenHash);
+        if (tokenUserId.isEmpty()) {
+            return invalidRefreshToken();
+        }
+
+        String userId = tokenUserId.get();
+        Optional<UserEntity> optionalUser = userRepository.findByIdForUpdate(userId);
         Optional<RefreshTokenEntity> storedToken =
-                refreshTokenRepository.findByTokenHashForUpdate(hashToken(rawRefreshToken));
+                refreshTokenRepository.findByTokenHashForUpdate(tokenHash);
         if (storedToken.isEmpty()) {
             return invalidRefreshToken();
         }
@@ -76,7 +83,6 @@ public class AuthService {
             return invalidRefreshToken();
         }
 
-        Optional<UserEntity> optionalUser = userRepository.findById(token.getUserId());
         if (optionalUser.isEmpty() || !Boolean.TRUE.equals(optionalUser.get().getIsActive())) {
             token.setRevokedAt(now);
             revokeActiveTokens(token.getUserId(), now);
@@ -88,14 +94,14 @@ public class AuthService {
     }
 
     @Transactional
-    public boolean logout(String userId, String rawRefreshToken) {
+    public boolean logout(String rawRefreshToken) {
         if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
             return false;
         }
 
         Optional<RefreshTokenEntity> storedToken =
                 refreshTokenRepository.findByTokenHashForUpdate(hashToken(rawRefreshToken));
-        if (storedToken.isEmpty() || !storedToken.get().getUserId().equals(userId)) {
+        if (storedToken.isEmpty()) {
             return false;
         }
 
@@ -125,9 +131,7 @@ public class AuthService {
     }
 
     private void revokeActiveTokens(String userId, LocalDateTime revokedAt) {
-        List<RefreshTokenEntity> activeTokens =
-                refreshTokenRepository.findByUserIdAndRevokedAtIsNull(userId);
-        activeTokens.forEach(token -> token.setRevokedAt(revokedAt));
+        refreshTokenRepository.revokeActiveTokensForUser(userId, revokedAt);
     }
 
     private static String newRefreshToken() {

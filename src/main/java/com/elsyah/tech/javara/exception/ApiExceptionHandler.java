@@ -16,8 +16,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import com.elsyah.tech.javara.response.ApiResponse;
-import com.elsyah.tech.javara.middleware.ratelimit.LoginRateLimitExceededException;
-import com.elsyah.tech.javara.middleware.ratelimit.LoginRateLimitUnavailableException;
+import com.elsyah.tech.javara.middleware.ratelimit.RateLimitExceededException;
+import com.elsyah.tech.javara.middleware.ratelimit.RateLimitUnavailableException;
 
 /**
  * ApiExceptionHandler is a global exception handler for the application. 
@@ -71,24 +71,24 @@ public class ApiExceptionHandler {
                 .body(ApiResponse.failure(status, "Resource was modified concurrently"));
     }
 
-    @ExceptionHandler(LoginRateLimitExceededException.class)
-    public ResponseEntity<ApiResponse<Void>> handleLoginRateLimitExceeded(
-            LoginRateLimitExceededException exception) {
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<ApiResponse<Void>> handleRateLimitExceeded(
+            RateLimitExceededException exception) {
         HttpStatus status = HttpStatus.TOO_MANY_REQUESTS;
         return ResponseEntity.status(status)
                 .header(HttpHeaders.RETRY_AFTER,
                         Long.toString(exception.getRetryAfterSeconds()))
-                .body(ApiResponse.failure(status, "Too many login requests. Try again later."));
+                .body(ApiResponse.failure(status, "Too many requests. Try again later."));
     }
 
-    @ExceptionHandler(LoginRateLimitUnavailableException.class)
-    public ResponseEntity<ApiResponse<Void>> handleLoginRateLimitUnavailable(
-            LoginRateLimitUnavailableException exception) {
-        logger.error("Rejecting login request because Redis rate limiting is unavailable",
+    @ExceptionHandler(RateLimitUnavailableException.class)
+    public ResponseEntity<ApiResponse<Void>> handleRateLimitUnavailable(
+            RateLimitUnavailableException exception) {
+        logger.error("Rejecting request because Redis rate limiting is unavailable",
                 exception.getCause());
         HttpStatus status = HttpStatus.SERVICE_UNAVAILABLE;
         return ResponseEntity.status(status)
-                .body(ApiResponse.failure(status, "Login is temporarily unavailable"));
+                .body(ApiResponse.failure(status, "Request is temporarily unavailable"));
     }
 
     private static boolean violatesActiveUserEmailUniqueness(Throwable exception) {

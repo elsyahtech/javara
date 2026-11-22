@@ -21,7 +21,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
-import com.elsyah.tech.javara.middleware.store.RedisLoginRateLimitStore;
+import com.elsyah.tech.javara.middleware.store.RedisRateLimitStore;
 import com.elsyah.tech.javara.testsupport.PostgresRedisTestSupport;
 
 @SpringBootTest
@@ -32,11 +32,18 @@ import com.elsyah.tech.javara.testsupport.PostgresRedisTestSupport;
         "app.security.bootstrap-admin.enabled=false",
         "app.middleware.rate-limit.login.max-requests=1",
         "app.middleware.rate-limit.login.window=30s",
-        "app.middleware.rate-limit.login.key-prefix=test:javara:login-rate-integration"
+        "app.middleware.rate-limit.login.key-prefix=test:javara:login-rate-integration",
+        "app.middleware.rate-limit.register.max-requests=1",
+        "app.middleware.rate-limit.register.window=30s",
+        "app.middleware.rate-limit.register.key-prefix=test:javara:register-rate-integration",
+        "app.middleware.rate-limit.refresh.max-requests=1",
+        "app.middleware.rate-limit.refresh.window=30s",
+        "app.middleware.rate-limit.refresh.key-prefix=test:javara:refresh-rate-integration",
+        "server.forward-headers-strategy=framework"
 })
-class RedisLoginRateLimitStoreIntegrationTests extends PostgresRedisTestSupport {
+class RedisRateLimitStoreIntegrationTests extends PostgresRedisTestSupport {
     @Autowired
-    private RedisLoginRateLimitStore store;
+    private RedisRateLimitStore store;
 
     @Autowired
     private StringRedisTemplate redisTemplate;
@@ -46,9 +53,14 @@ class RedisLoginRateLimitStoreIntegrationTests extends PostgresRedisTestSupport 
 
     @AfterEach
     void clearIntegrationKeys() {
-        var keys = redisTemplate.keys("test:javara:login-rate-integration:*");
-        if (keys != null && !keys.isEmpty()) {
-            redisTemplate.delete(keys);
+        for (String prefix : List.of(
+                "test:javara:login-rate-integration:*",
+                "test:javara:register-rate-integration:*",
+                "test:javara:refresh-rate-integration:*")) {
+            var keys = redisTemplate.keys(prefix);
+            if (keys != null && !keys.isEmpty()) {
+                redisTemplate.delete(keys);
+            }
         }
     }
 
@@ -99,13 +111,14 @@ class RedisLoginRateLimitStoreIntegrationTests extends PostgresRedisTestSupport 
 
     // Verifies that the registered MVC interceptor rejects excess login requests before validation.
     @Test
-    void loginEndpointReturns429AfterConfiguredRequestLimit() throws Exception {
+    void loginEndpointUsesForwardedClientAddressAndEnforcesLimit() throws Exception {
         String clientIp = "192.0.2.90";
 
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
                         .post("/api/v1/auth/login")
+                        .header("X-Forwarded-For", clientIp)
                         .with(request -> {
-                            request.setRemoteAddr(clientIp);
+                            request.setRemoteAddr("10.0.0.10");
                             return request;
                         })
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
@@ -115,8 +128,9 @@ class RedisLoginRateLimitStoreIntegrationTests extends PostgresRedisTestSupport 
 
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
                         .post("/api/v1/auth/login")
+                        .header("X-Forwarded-For", clientIp)
                         .with(request -> {
-                            request.setRemoteAddr(clientIp);
+                            request.setRemoteAddr("10.0.0.11");
                             return request;
                         })
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
@@ -127,5 +141,50 @@ class RedisLoginRateLimitStoreIntegrationTests extends PostgresRedisTestSupport 
                         .header().exists("Retry-After"))
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
                         .jsonPath("$.httpCode").value(429));
+    }
+
+    @Test
+    void registerEndpointReturns429AfterConfiguredRequestLimit() throws Exception {
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/v1/auth/register")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"rate-limit-one@example.com","password":"password123"}
+                                """))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .status().isCreated());
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/v1/auth/register")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"rate-limit-two@example.com","password":"password123"}
+                                """))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .status().isTooManyRequests())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .header().exists("Retry-After"));
+    }
+
+    @Test
+    void refreshEndpointReturns429AfterConfiguredRequestLimit() throws Exception {
+        String request = """
+                {"refreshToken":"invalid-refresh-token"}
+                """;
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/v1/auth/refresh")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content(request))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .status().isUnauthorized());
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/v1/auth/refresh")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content(request))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .status().isTooManyRequests())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .header().exists("Retry-After"));
     }
 }

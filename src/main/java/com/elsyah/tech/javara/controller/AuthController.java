@@ -10,7 +10,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -97,10 +96,9 @@ public class AuthController {
     @PostMapping("/logout")
     public ResponseEntity<ApiResponse<Void>> logout(
             @RequestBody(required = false) RefreshTokenRequest request,
-            HttpServletRequest servletRequest,
-            Authentication authentication) {
+            HttpServletRequest servletRequest) {
         String refreshToken = refreshToken(request, servletRequest);
-        boolean loggedOut = authService.logout(authentication.getName(), refreshToken);
+        boolean loggedOut = authService.logout(refreshToken);
         HttpStatus status = loggedOut ? HttpStatus.OK : HttpStatus.UNAUTHORIZED;
 
         ResponseEntity.BodyBuilder response = ResponseEntity.status(status);

@@ -18,7 +18,6 @@ import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Base64;
-import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
@@ -80,9 +79,11 @@ class AuthServiceTests {
                 userService, userRepository, refreshRepository, accessTokenService);
         RefreshTokenEntity oldToken = storedToken("user-1", "old-refresh-token");
         UserEntity user = user("user-1");
+        when(refreshRepository.findUserIdByTokenHash(hash("old-refresh-token")))
+                .thenReturn(Optional.of("user-1"));
         when(refreshRepository.findByTokenHashForUpdate(hash("old-refresh-token")))
                 .thenReturn(Optional.of(oldToken));
-        when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate("user-1")).thenReturn(Optional.of(user));
         when(accessTokenService.issue(user)).thenReturn("new-access-token");
 
         AuthServiceResult result = service.refresh("old-refresh-token");
@@ -107,23 +108,26 @@ class AuthServiceTests {
                 userService, userRepository, refreshRepository, accessTokenService);
         RefreshTokenEntity replayed = storedToken("user-1", "replayed-token");
         replayed.setRevokedAt(LocalDateTime.now().minusMinutes(1));
-        RefreshTokenEntity active = storedToken("user-1", "active-token");
+        when(refreshRepository.findUserIdByTokenHash(hash("replayed-token")))
+                .thenReturn(Optional.of("user-1"));
         when(refreshRepository.findByTokenHashForUpdate(hash("replayed-token")))
                 .thenReturn(Optional.of(replayed));
-        when(refreshRepository.findByUserIdAndRevokedAtIsNull("user-1"))
-                .thenReturn(List.of(active));
+        when(userRepository.findByIdForUpdate("user-1"))
+                .thenReturn(Optional.of(user("user-1")));
 
         AuthServiceResult result = service.refresh("replayed-token");
 
         assertEquals(HttpStatus.UNAUTHORIZED, result.status());
         assertNull(result.accessToken());
-        assertNotNull(active.getRevokedAt());
+        verify(refreshRepository).revokeActiveTokensForUser(
+                org.mockito.ArgumentMatchers.eq("user-1"),
+                org.mockito.ArgumentMatchers.any(LocalDateTime.class));
         verify(refreshRepository, never()).save(any());
     }
 
-    // Verifies that logout cannot revoke a refresh token owned by another user.
+    // Verifies that a refresh token alone is sufficient to revoke its session.
     @Test
-    void logoutRejectsAnotherUsersRefreshToken() {
+    void logoutRevokesTokenWithoutUserId() {
         UserService userService = mock(UserService.class);
         UserRepository userRepository = mock(UserRepository.class);
         RefreshTokenRepository refreshRepository = mock(RefreshTokenRepository.class);
@@ -134,10 +138,10 @@ class AuthServiceTests {
         when(refreshRepository.findByTokenHashForUpdate(hash("refresh-token")))
                 .thenReturn(Optional.of(token));
 
-        boolean loggedOut = service.logout("user-1", "refresh-token");
+        boolean loggedOut = service.logout("refresh-token");
 
-        assertFalse(loggedOut);
-        assertNull(token.getRevokedAt());
+        assertTrue(loggedOut);
+        assertNotNull(token.getRevokedAt());
     }
 
     // Verifies that failed login credentials do not create a refresh-token record.

@@ -16,8 +16,8 @@ import org.springframework.dao.PessimisticLockingFailureException;
 import com.elsyah.tech.javara.response.ApiResponse;
 import com.elsyah.tech.javara.exception.ApiException;
 import com.elsyah.tech.javara.exception.ApiExceptionHandler;
-import com.elsyah.tech.javara.middleware.ratelimit.LoginRateLimitExceededException;
-import com.elsyah.tech.javara.middleware.ratelimit.LoginRateLimitUnavailableException;
+import com.elsyah.tech.javara.middleware.ratelimit.RateLimitExceededException;
+import com.elsyah.tech.javara.middleware.ratelimit.RateLimitUnavailableException;
 
 class ApiExceptionTest {
 
@@ -110,32 +110,32 @@ class ApiExceptionTest {
 
     // Verifies that a rate-limited login returns HTTP 429 and a Retry-After header.
     @Test
-    void shouldReturnTooManyRequestsForLoginRateLimit() {
+    void shouldReturnTooManyRequestsForRateLimit() {
         ApiExceptionHandler handler = new ApiExceptionHandler();
 
         ResponseEntity<ApiResponse<Void>> response =
-                handler.handleLoginRateLimitExceeded(
-                        new LoginRateLimitExceededException(1500));
+                handler.handleRateLimitExceeded(
+                        new RateLimitExceededException(1500));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
         assertThat(response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("2");
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().getError())
-                .isEqualTo("Too many login requests. Try again later.");
+                .isEqualTo("Too many requests. Try again later.");
     }
 
     // Verifies that Redis failures reject login with HTTP 503.
     @Test
-    void shouldReturnServiceUnavailableWhenLoginRateLimitStoreFails() {
+    void shouldReturnServiceUnavailableWhenRateLimitStoreFails() {
         ApiExceptionHandler handler = new ApiExceptionHandler();
 
         ResponseEntity<ApiResponse<Void>> response =
-                handler.handleLoginRateLimitUnavailable(
-                        new LoginRateLimitUnavailableException(
+                handler.handleRateLimitUnavailable(
+                        new RateLimitUnavailableException(
                                 new IllegalStateException("Redis unavailable")));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
         assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().getError()).isEqualTo("Login is temporarily unavailable");
+        assertThat(response.getBody().getError()).isEqualTo("Request is temporarily unavailable");
     }
 }

@@ -14,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import com.elsyah.tech.javara.entity.UserEntity;
+import com.elsyah.tech.javara.repository.RefreshTokenRepository;
 import com.elsyah.tech.javara.repository.UserRepository;
 import com.elsyah.tech.javara.request.UserRequest;
 import com.elsyah.tech.javara.request.LoginRequest;
@@ -36,9 +37,10 @@ public class UserService {
     private static final int MAX_PAGE_SIZE = 100;
 
     /**
-     * The UserRepository instance used for database operations related to users.
+     * The UserRepository is used for database operations related to users.
      */
     private final UserRepository repository;
+    private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordHashService passwordHashService;
 
     /**
@@ -47,13 +49,13 @@ public class UserService {
      * @param repository the UserRepository to be used for database operations
      */
     @Autowired
-    public UserService(UserRepository repository, PasswordHashService passwordHashService) {
+    public UserService(
+            UserRepository repository,
+            PasswordHashService passwordHashService,
+            RefreshTokenRepository refreshTokenRepository) {
         this.repository = repository;
         this.passwordHashService = passwordHashService;
-    }
-
-    public UserService(UserRepository repository) {
-        this(repository, new PasswordHashService());
+        this.refreshTokenRepository = refreshTokenRepository;
     }
 
     /**
@@ -226,6 +228,8 @@ public class UserService {
                 return new ServiceResult<>(null, HttpStatus.CONFLICT, "Email already exists");
             }
 
+            boolean passwordChanged =
+                    !passwordHashService.matches(request.password(), userEntity.getPassword());
             userEntity.setEmail(request.email());
             userEntity.setPassword(passwordHashService.encode(request.password()));
             if (request.isActive() != null) {
@@ -234,6 +238,9 @@ public class UserService {
             userEntity.setUpdatedAt(LocalDateTime.now());
 
             UserEntity updatedUser = repository.saveAndFlush(userEntity);
+            if (passwordChanged) {
+                refreshTokenRepository.revokeActiveTokensForUser(id, LocalDateTime.now());
+            }
             return new ServiceResult<>(updatedUser, HttpStatus.OK, "User updated successfully");
         }
 
@@ -279,14 +286,16 @@ public class UserService {
      */
     @Transactional
     public ServiceResult<UserEntity> login(LoginRequest request) {
-        Optional<UserEntity> optionalUser = repository.findByEmail(request.email());
+        Optional<UserEntity> optionalUser = repository.findByEmailForUpdate(request.email());
         if (optionalUser.isEmpty()) {
+            passwordHashService.matchesDummyPassword(request.password());
             return invalidCredentials();
         }
 
         UserEntity user = optionalUser.get();
-        if (!Boolean.TRUE.equals(user.getIsActive())
-                || !passwordHashService.matches(request.password(), user.getPassword())) {
+        boolean passwordMatches =
+                passwordHashService.matches(request.password(), user.getPassword());
+        if (!Boolean.TRUE.equals(user.getIsActive()) || !passwordMatches) {
             return invalidCredentials();
         }
 

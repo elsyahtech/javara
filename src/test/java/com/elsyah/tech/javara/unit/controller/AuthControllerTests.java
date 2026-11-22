@@ -11,6 +11,8 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import jakarta.servlet.http.Cookie;
+
 import java.time.Duration;
 import java.util.Base64;
 
@@ -22,7 +24,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.security.core.Authentication;
 
 import com.elsyah.tech.javara.controller.AuthController;
 import com.elsyah.tech.javara.entity.UserEntity;
@@ -172,21 +173,38 @@ class AuthControllerTests {
     void cookieLogoutClearsCookiesWhenRefreshTokenIsInvalid() {
         UserService userService = mock(UserService.class);
         AuthService authService = mock(AuthService.class);
-        Authentication authentication = mock(Authentication.class);
-        when(authentication.getName()).thenReturn("user-1");
-        when(authService.logout("user-1", null)).thenReturn(false);
+        when(authService.logout(null)).thenReturn(false);
         MockHttpServletRequest request = new MockHttpServletRequest();
 
         ResponseEntity<ApiResponse<Void>> response = new AuthController(
                 userService,
                 authService,
                 jwtProperties(TokenTransport.COOKIE))
-                .logout(null, request, authentication);
+                .logout(null, request);
 
         assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
         assertEquals(2, response.getHeaders().get(HttpHeaders.SET_COOKIE).size());
         assertTrue(response.getHeaders().get(HttpHeaders.SET_COOKIE).stream()
                 .allMatch(cookie -> cookie.contains("Max-Age=0")));
+    }
+
+    // Verifies that cookie logout passes the refresh cookie without requiring access-token authentication.
+    @Test
+    void cookieLogoutUsesRefreshCookieWithoutAuthentication() {
+        UserService userService = mock(UserService.class);
+        AuthService authService = mock(AuthService.class);
+        when(authService.logout("refresh-token")).thenReturn(true);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setCookies(new Cookie("REFRESH_TOKEN", "refresh-token"));
+
+        ResponseEntity<ApiResponse<Void>> response = new AuthController(
+                userService,
+                authService,
+                jwtProperties(TokenTransport.COOKIE))
+                .logout(null, request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(authService).logout("refresh-token");
     }
 
     private static UserEntity user(String id) {

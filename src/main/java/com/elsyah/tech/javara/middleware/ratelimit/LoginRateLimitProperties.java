@@ -13,10 +13,10 @@ import org.springframework.validation.annotation.Validated;
 @Validated
 @ConfigurationProperties(prefix = "app.middleware.rate-limit.login")
 public record LoginRateLimitProperties(
-        @Min(1) int maxRequests,
-        @NotNull Duration window,
-        @NotBlank String keyPrefix,
-        @DefaultValue("true") boolean enabled) {
+        @Min(1) @DefaultValue("10") int maxRequests,
+        @NotNull @DefaultValue("1m") Duration window,
+        @NotBlank @DefaultValue("javara:login") String keyPrefix,
+        @DefaultValue("true") boolean enabled) implements RateLimitSettings {
     public LoginRateLimitProperties {
         if (window != null && (window.isZero() || window.isNegative()
                 || window.toMillis() < 1)) {

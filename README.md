@@ -7,6 +7,7 @@ The repository also plans to maintain separate implementations for MySQL, SQL Se
 ## Table of Contents
 
 - [Overview](#overview)
+- [Documentation](#documentation)
 - [Technology Stack](#technology-stack)
 - [Current Features](#current-features)
 - [Project Structure](#project-structure)
@@ -21,7 +22,7 @@ The repository also plans to maintain separate implementations for MySQL, SQL Se
 - [Request and Response Format](#request-and-response-format)
 - [Validation and Error Handling](#validation-and-error-handling)
 - [Password Hashing](#password-hashing)
-- [Redis Login Rate Limiting](#redis-login-rate-limiting)
+- [Redis Authentication Rate Limiting](#redis-authentication-rate-limiting)
 - [Concurrency and Data Safety](#concurrency-and-data-safety)
 - [Testing](#testing)
 - [Docker and PostgreSQL](#docker-and-postgresql)
@@ -34,6 +35,12 @@ The repository also plans to maintain separate implementations for MySQL, SQL Se
 This starter provides a Spring Boot REST API for basic user CRUD operations backed by PostgreSQL.
 
 The application is organized into controller, service, repository, entity, request, projection, and response layers.
+
+## Documentation
+
+The [documentation index](docs/README.md) links to a structured guide and
+step-by-step tutorials for setup, configuration, API use, and business
+adoption.
 
 Supported operations include:
 
@@ -84,7 +91,7 @@ Supported operations include:
 - CSRF protection for cookie transport
 - USER/ADMIN roles with user ownership checks
 - Public user registration and configurable initial ADMIN bootstrap
-- Redis-backed login rate limiting
+- Redis-backed authentication rate limiting
 - Standard success and error response wrapper
 - Selected-column projection queries
 - Pagination through Spring `Pageable`
@@ -181,7 +188,7 @@ app:
 
 Origins must include the scheme and optional port. Cookie transport with CORS enabled requires credentials and explicit origins; wildcard origins are not allowed with credentials. Cookie transport also requires a CSRF token from `GET /api/v1/auth/csrf` to be sent in the `X-XSRF-TOKEN` header on state-changing requests.
 
-Compression, request IDs, security headers, and login rate limiting are controlled independently by `server.compression.enabled`, `app.web.request-id.enabled`, `app.security.headers.enabled`, and `app.middleware.rate-limit.login.enabled`. The HTTP listener remains active; configure its `server.address` and `server.port` instead.
+Compression, request IDs, security headers, and authentication rate limits are controlled independently by `server.compression.enabled`, `app.web.request-id.enabled`, `app.security.headers.enabled`, and `app.middleware.rate-limit.<endpoint>.enabled`. The HTTP listener remains active; configure its `server.address` and `server.port` instead.
 
 ## Quick Start
 
@@ -233,9 +240,12 @@ src/main/resources/db/migration
 |---|---|
 | `V1__create_user.sql` | Creates the `users` table and indexes, including active-user email uniqueness and optimistic locking |
 | `V2__create_refresh_tokens.sql` | Creates hashed refresh-token storage |
-| `V3__seed_user.sql` | Inserts an example user |
+| `V3__seed_user.sql` | Historical migration that inserts an example user |
+| `V4__remove_demo_user.sql` | Removes the historical demo account and its refresh tokens |
 
-Do not modify migration files that have already been applied. Add a new migration whenever the database schema changes.
+Fresh databases run all migrations in order and do not retain a demo account.
+Do not modify migration files that have already been applied. Add a new
+migration whenever the database schema changes.
 
 Check migration history:
 
@@ -363,11 +373,11 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
   -d '{"email":"user@example.com","password":"password123"}'
 ```
 
-In Bearer mode (the default), a successful login returns an access JWT and refresh token in the response. Send the access JWT as `Authorization: Bearer <accessToken>`. Refresh with `POST /api/v1/auth/refresh` and `{"refreshToken":"..."}`; each successful refresh rotates the opaque refresh token. Logout at `POST /api/v1/auth/logout` with the access JWT and the current refresh token in the same JSON shape.
+In Bearer mode (the default), a successful login returns an access JWT and refresh token in the response. Send the access JWT as `Authorization: Bearer <accessToken>` for protected endpoints. Refresh with `POST /api/v1/auth/refresh` and `{"refreshToken":"..."}`; each successful refresh rotates the opaque refresh token. Logout at `POST /api/v1/auth/logout` requires only the current refresh token in the same JSON shape; the access token is not required.
 
-Access tokens expire after 15 minutes by default. Refresh tokens expire after 30 days, are stored in PostgreSQL only as SHA-256 hashes, and are revoked on rotation or logout. Reuse of a revoked refresh token revokes the user's other active refresh tokens. A logged-out access JWT remains valid until its short expiry.
+Access tokens expire after 15 minutes by default. Refresh tokens expire after 30 days, are stored in PostgreSQL only as SHA-256 hashes, and are revoked on rotation or logout. Reuse of a revoked refresh token revokes the user's other active refresh tokens. Changing a user's password revokes all of that user's active refresh tokens; already-issued access JWTs remain valid until their short expiry.
 
-Set `app.security.jwt.transport: COOKIE` to store tokens in HttpOnly cookies instead. The access cookie is sent to API routes; the refresh cookie is scoped to `/api/v1/auth`. Cookie mode enables CSRF protection: first call `GET /api/v1/auth/csrf`, then send its token in `X-XSRF-TOKEN` for POST/PUT/PATCH/DELETE requests. Cookies are Secure by default; cross-site deployments must configure `SameSite: None`, HTTPS, CORS credentials, and explicit allowed origins.
+Set `app.security.jwt.transport: COOKIE` to store tokens in HttpOnly cookies instead. The access cookie is sent to API routes; the refresh cookie is scoped to `/api/v1/auth`. Cookie mode enables CSRF protection: first call `GET /api/v1/auth/csrf`, then send its token in `X-XSRF-TOKEN` for POST/PUT/PATCH/DELETE requests. Logout works with the refresh cookie even after the access cookie expires. Cookies are Secure by default; cross-site deployments must configure `SameSite: None`, HTTPS, CORS credentials, and explicit allowed origins.
 
 `/` and `/api/v1/auth/register`, `/api/v1/auth/login`, and `/api/v1/auth/refresh` are public. All `/api/v1/users/**` routes require authentication. USER accounts can access their own ID-based user routes; list and create operations, and all other-user management, require ADMIN.
 
@@ -614,11 +624,11 @@ Legacy formats remain verifiable for compatibility, but:
 - Only Argon2 and BCrypt can be selected for new passwords.
 - SHA-256 and MD5 hashes are upgraded to the configured algorithm after the user's next successful login.
 
-## Redis Login Rate Limiting
+## Redis Authentication Rate Limiting
 
-The login endpoint uses Redis to count requests per client IP in a fixed time window. Redis stores only short-lived counters; PostgreSQL remains the source of truth for application data. The limiter runs before request validation and password hashing, so malformed and successful login requests also count toward the limit.
+The login, registration, and refresh endpoints use independent Redis fixed-window counters per client IP. Redis stores only short-lived counters; PostgreSQL remains the source of truth for application data. The limiter runs before request validation and password hashing, so malformed requests also count toward the limit.
 
-Defaults allow 10 login requests per IP per minute. Configure the limit and key prefix with:
+Defaults allow 10 login requests per IP per minute, 5 registrations per IP per hour, and 30 refresh requests per IP per minute. Configure each policy independently:
 
 ```yaml
 app:
@@ -628,11 +638,21 @@ app:
         max-requests: 10
         window: 1m
         key-prefix: javara:local:login
+      register:
+        enabled: true
+        max-requests: 5
+        window: 1h
+        key-prefix: javara:local:register
+      refresh:
+        enabled: true
+        max-requests: 30
+        window: 1m
+        key-prefix: javara:local:refresh
 ```
 
-Equivalent environment variables are `LOGIN_RATE_LIMIT_MAX_REQUESTS`, `LOGIN_RATE_LIMIT_WINDOW`, and `LOGIN_RATE_LIMIT_KEY_PREFIX`. Use a distinct key prefix for each environment sharing a Redis server. Redis connection settings use Spring Boot's `SPRING_DATA_REDIS_HOST`, `SPRING_DATA_REDIS_PORT`, `SPRING_DATA_REDIS_USERNAME`, and `SPRING_DATA_REDIS_PASSWORD` properties.
+Each endpoint accepts `enabled`, `max-requests`, `window`, and `key-prefix`. Spring environment variable equivalents use the `APP_MIDDLEWARE_RATE_LIMIT_<LOGIN|REGISTER|REFRESH>_` prefix, for example `APP_MIDDLEWARE_RATE_LIMIT_REGISTER_MAX_REQUESTS`. Use distinct key prefixes for environments sharing a Redis server. Redis connection settings use Spring Boot's `SPRING_DATA_REDIS_HOST`, `SPRING_DATA_REDIS_PORT`, `SPRING_DATA_REDIS_USERNAME`, and `SPRING_DATA_REDIS_PASSWORD` properties.
 
-The counter increment and expiration are performed atomically in Redis. Client IPs are taken from the direct servlet connection; forwarded headers are not trusted. When deploying behind a reverse proxy, configure trusted client-address resolution before relying on per-IP limits. Redis failure rejects login requests with `503` rather than bypassing the limiter.
+The counter increment and expiration are performed atomically in Redis. `server.forward-headers-strategy: framework` makes the servlet client address proxy-aware. Only enable this behind a trusted reverse proxy/load balancer that strips client-supplied forwarding headers and writes its own; otherwise clients can spoof their IP and bypass per-IP limits. The setup scripts enable this strategy and bind the local app to loopback. Disable it when directly exposing the application without a trusted proxy. Exceeded limits return `429` with `Retry-After`; Redis failure rejects the affected request with `503` rather than bypassing the limiter.
 
 ## Concurrency and Data Safety
 
@@ -777,29 +797,30 @@ Additional production work is required before handling real accounts or sensitiv
 
 1. Configure signing/database credentials through a production secret manager.
 2. Configure Redis authentication, TLS, availability, and monitoring for production rate limiting.
-3. Add maximum pagination size.
-4. Add deadlock/lock timeout handling.
-5. Add structured logging and request tracing.
-6. Add health checks and metrics.
-7. Add HTTPS/TLS at the gateway or reverse proxy.
-8. Add backup and restore procedures.
-9. Add database connection-pool monitoring.
-10. Add CI/CD database migration checks.
-11. Add load and concurrent integration tests to CI.
+3. Add deadlock/lock timeout handling.
+4. Add structured logging and request tracing.
+5. Add health checks and metrics.
+6. Add HTTPS/TLS at the gateway or reverse proxy.
+7. Add backup and restore procedures.
+8. Add database connection-pool monitoring.
+9. Add CI/CD database migration checks.
+10. Add load and concurrent integration tests to CI.
+
+Review the [production and business adoption guide](docs/guide/production-and-adoption.md)
+for product boundaries such as tenant isolation, account recovery, and
+registration policy.
 
 ## Known Limitations
 
 - Access JWTs are not revoked immediately by logout; they remain valid until their configured expiry.
-- Login rate limiting currently uses a fixed window keyed by the direct client IP.
-- The application returns `503` for login requests if Redis is unavailable.
+- Authentication rate limiting uses fixed windows keyed by the proxy-resolved client IP.
+- The application returns `503` for limited authentication requests if Redis is unavailable.
 - Create ignores `request.isActive()` and always creates an active user.
-- Pagination size is not capped.
-- The integration test assumes a reachable PostgreSQL database.
-- The test database credentials should be replaced with environment variables.
 - Concurrent HTTP behavior should also be tested through MockMvc or a running HTTP server.
 - Lock timeout and deadlock retry behavior are not yet standardized.
 - A generic database outage currently is not distinguished from a constraint conflict.
 - Login/refresh tokens are returned in the response only when Bearer transport is configured.
+- The service does not provide tenant isolation, email verification, or password recovery.
 
 ## Troubleshooting
 

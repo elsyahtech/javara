@@ -3,6 +3,8 @@ package com.elsyah.tech.javara.utils.security;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Locale;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -16,6 +18,10 @@ import org.springframework.beans.factory.annotation.Value;
  */
 @Service
 public class PasswordHashService {
+    private static final String DUMMY_PASSWORD = "JAVARA_DUMMY_PASSWORD_TIMING_ONLY";
+    private static final ConcurrentMap<PasswordAlgorithm, String> DUMMY_PASSWORD_HASHES =
+            new ConcurrentHashMap<>();
+
     private final Argon2PasswordEncoder argon2 =
             Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
     private final BCryptPasswordEncoder bcrypt = new BCryptPasswordEncoder(12);
@@ -25,6 +31,7 @@ public class PasswordHashService {
     public PasswordHashService(
             @Value("${app.security.password.algorithm:ARGON2}") String algorithm) {
         this.defaultAlgorithm = PasswordAlgorithm.fromConfiguration(algorithm);
+        dummyPasswordHash();
     }
 
     public PasswordHashService() {
@@ -99,6 +106,10 @@ public class PasswordHashService {
         }
     }
 
+    public boolean matchesDummyPassword(String rawPassword) {
+        return matches(rawPassword, dummyPasswordHash());
+    }
+
     public boolean requiresUpgrade(String storedPassword) {
         if (storedPassword == null) {
             return true;
@@ -119,6 +130,12 @@ public class PasswordHashService {
             case ARGON2 -> "{argon2}";
             case BCRYPT -> "{bcrypt}";
         };
+    }
+
+    private String dummyPasswordHash() {
+        return DUMMY_PASSWORD_HASHES.computeIfAbsent(
+                defaultAlgorithm,
+                algorithm -> encode(DUMMY_PASSWORD, algorithm));
     }
 
     private static String stripPrefix(String value, String... prefixes) {

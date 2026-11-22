@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -22,8 +23,12 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import com.elsyah.tech.javara.entity.UserEntity;
+import com.elsyah.tech.javara.repository.RefreshTokenRepository;
 import com.elsyah.tech.javara.repository.UserRepository;
+import com.elsyah.tech.javara.request.LoginRequest;
 import com.elsyah.tech.javara.request.UserRequest;
+import com.elsyah.tech.javara.service.AuthService;
+import com.elsyah.tech.javara.service.AuthServiceResult;
 import com.elsyah.tech.javara.service.ServiceResult;
 import com.elsyah.tech.javara.service.UserService;
 import com.elsyah.tech.javara.testsupport.PostgresRedisTestSupport;
@@ -42,6 +47,12 @@ class UserConcurrentIntegrationTests extends PostgresRedisTestSupport {
 
     @Autowired
     private UserRepository repository;
+
+    @Autowired
+    private RefreshTokenRepository refreshTokenRepository;
+
+    @Autowired
+    private AuthService authService;
 
     @Autowired
     private UserService userService;
@@ -64,11 +75,23 @@ class UserConcurrentIntegrationTests extends PostgresRedisTestSupport {
 
     @BeforeEach
     void clearUsers() {
+        jdbcTemplate.update("""
+                DELETE FROM refresh_tokens
+                WHERE user_id IN (
+                    SELECT id FROM users
+                    WHERE email LIKE 'concurrent-%'
+                       OR email LIKE 'before-%'
+                       OR email LIKE 'delete-%'
+                       OR email LIKE 'mixed-%'
+                       OR email LIKE 'password-change-%'
+                )
+                """);
         jdbcTemplate.update(
                 "DELETE FROM users WHERE email LIKE 'concurrent-%'"
                         + " OR email LIKE 'before-%'"
                         + " OR email LIKE 'delete-%'"
-                        + " OR email LIKE 'mixed-%'");
+                        + " OR email LIKE 'mixed-%'"
+                        + " OR email LIKE 'password-change-%'");
         repository.flush();
     }
 
@@ -136,6 +159,61 @@ class UserConcurrentIntegrationTests extends PostgresRedisTestSupport {
         assertThat(passwordHashService.matches("password-one", updated.getPassword())
                 || passwordHashService.matches("password-two", updated.getPassword()))
                 .isTrue();
+    }
+
+    @Test
+    void changingPasswordRevokesExistingRefreshTokens() {
+        String email = "password-change-" + UUID.randomUUID() + "@example.com";
+        ServiceResult<UserEntity> created = userService.createUser(
+                new UserRequest(email, "old-password-123", true));
+        AuthServiceResult login = authService.login(
+                new LoginRequest(email, "old-password-123"));
+
+        assertThat(login.status()).isEqualTo(HttpStatus.OK);
+        assertThat(refreshTokenRepository.findByUserIdAndRevokedAtIsNull(
+                created.data().getId())).hasSize(1);
+
+        ServiceResult<UserEntity> updated = userService.updateUser(
+                created.data().getId(),
+                new UserRequest(email, "new-password-123", true));
+
+        assertThat(updated.status()).isEqualTo(HttpStatus.OK);
+        assertThat(refreshTokenRepository.findByUserIdAndRevokedAtIsNull(
+                created.data().getId())).isEmpty();
+        assertThat(authService.refresh(login.refreshToken()).status())
+                .isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void simultaneousPasswordChangeAndRefreshLeaveNoActiveRefreshTokens() throws Exception {
+        String email = "password-change-" + UUID.randomUUID() + "@example.com";
+        UserEntity user = userService.createUser(
+                new UserRequest(email, "old-password-123", true)).data();
+        AuthServiceResult login = authService.login(
+                new LoginRequest(email, "old-password-123"));
+        CountDownLatch start = new CountDownLatch(1);
+
+        Future<AuthServiceResult> refresh = executor.submit(() -> {
+            start.await();
+            return authService.refresh(login.refreshToken());
+        });
+        Future<HttpStatus> update = executor.submit(() -> {
+            start.await();
+            return userService.updateUser(
+                    user.getId(),
+                    new UserRequest(email, "new-password-123", true)).status();
+        });
+        start.countDown();
+
+        AuthServiceResult refreshResult = refresh.get();
+        assertThat(refreshResult.status()).isIn(HttpStatus.OK, HttpStatus.UNAUTHORIZED);
+        HttpStatus updateStatus = update.get();
+        assertThat(updateStatus).isEqualTo(HttpStatus.OK);
+        assertThat(refreshTokenRepository.findByUserIdAndRevokedAtIsNull(user.getId()))
+                .as("refresh status: %s, update status: %s",
+                        refreshResult.status(),
+                        updateStatus)
+                .isEmpty();
     }
 
     // Verifies that concurrent delete requests do not delete or mutate beyond one success.

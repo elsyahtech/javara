@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -26,6 +27,7 @@ import org.springframework.http.HttpStatus;
 
 import com.elsyah.tech.javara.entity.UserEntity;
 import com.elsyah.tech.javara.projection.UserSelectColumn;
+import com.elsyah.tech.javara.repository.RefreshTokenRepository;
 import com.elsyah.tech.javara.repository.UserRepository;
 import com.elsyah.tech.javara.request.UserRequest;
 import com.elsyah.tech.javara.request.LoginRequest;
@@ -48,13 +50,29 @@ import com.elsyah.tech.javara.utils.security.PasswordHashService;
  * @contact https://www.linkedin.com/in/elmansyah
  */
 class UserServiceTests {
+    private static UserService newService(UserRepository repository) {
+        return new UserService(
+                repository,
+                new PasswordHashService(),
+                mock(RefreshTokenRepository.class));
+    }
+
+    private static UserService newService(
+            UserRepository repository,
+            PasswordHashService passwordHashService) {
+        return new UserService(
+                repository,
+                passwordHashService,
+                mock(RefreshTokenRepository.class));
+    }
+
     // Verifies that an existing email prevents user creation and repository saves.
     @Test
     void createUserWithExistingEmailReturnsConflictResult() {
         UserRepository repository = mock(UserRepository.class);
         UserRequest request = new UserRequest("existing@example.com", "password123", true);
         when(repository.existsByEmail("existing@example.com")).thenReturn(true);
-        UserService service = new UserService(repository);
+        UserService service = newService(repository);
 
         ServiceResult<UserEntity> result = service.createUser(request);
 
@@ -72,7 +90,7 @@ class UserServiceTests {
         when(repository.existsByEmail("new@example.com")).thenReturn(false);
         when(repository.saveAndFlush(any(UserEntity.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
-        UserService service = new UserService(repository);
+        UserService service = newService(repository);
 
         ServiceResult<UserEntity> result = service.createUser(request);
 
@@ -96,7 +114,7 @@ class UserServiceTests {
         UserEntity second = new UserEntity();
         when(repository.findAll()).thenReturn(List.of(first, second));
 
-        ServiceResult<List<UserEntity>> result = new UserService(repository).findAllUsers();
+        ServiceResult<List<UserEntity>> result = newService(repository).findAllUsers();
 
         assertEquals(HttpStatus.OK, result.status());
         assertEquals("Users retrieved successfully", result.message());
@@ -111,7 +129,7 @@ class UserServiceTests {
         UserRepository repository = mock(UserRepository.class);
         when(repository.findAll()).thenReturn(List.of());
 
-        ServiceResult<List<UserEntity>> result = new UserService(repository).findAllUsers();
+        ServiceResult<List<UserEntity>> result = newService(repository).findAllUsers();
 
         assertEquals(HttpStatus.NOT_FOUND, result.status());
         assertEquals("No users found", result.message());
@@ -126,7 +144,7 @@ class UserServiceTests {
         when(repository.findAllUsersWithSelectedColumns()).thenReturn(List.of(projection));
 
         ServiceResult<List<UserSelectColumn>> result =
-                new UserService(repository).findAllUsersWithSelectedColumns();
+                newService(repository).findAllUsersWithSelectedColumns();
 
         assertEquals(HttpStatus.OK, result.status());
         assertEquals(1, result.data().size());
@@ -140,7 +158,7 @@ class UserServiceTests {
         when(repository.findAllUsersWithSelectedColumns()).thenReturn(List.of());
 
         ServiceResult<List<UserSelectColumn>> result =
-                new UserService(repository).findAllUsersWithSelectedColumns();
+                newService(repository).findAllUsersWithSelectedColumns();
 
         assertEquals(HttpStatus.NOT_FOUND, result.status());
         assertEquals("No users found", result.message());
@@ -161,7 +179,7 @@ class UserServiceTests {
                 .thenReturn(List.of(projection));
 
         ServiceResult<List<UserSelectColumn>> result =
-                new UserService(repository).findAllUsersWithLimitAndOffset(pageable);
+                newService(repository).findAllUsersWithLimitAndOffset(pageable);
 
         assertEquals(HttpStatus.OK, result.status());
         assertEquals(List.of(projection), result.data());
@@ -178,7 +196,7 @@ class UserServiceTests {
                 Sort.by(Sort.Order.desc("email"), Sort.Order.asc("id")));
         when(repository.findAllUsersWithLimitAndOffset(orderedPageable)).thenReturn(List.of());
 
-        new UserService(repository).findAllUsersWithLimitAndOffset(pageable);
+        newService(repository).findAllUsersWithLimitAndOffset(pageable);
 
         verify(repository).findAllUsersWithLimitAndOffset(orderedPageable);
     }
@@ -186,7 +204,7 @@ class UserServiceTests {
     @Test
     void findAllUsersWithLimitAndOffsetRejectsPageSizesOutsideAllowedRange() {
         UserRepository repository = mock(UserRepository.class);
-        UserService service = new UserService(repository);
+        UserService service = newService(repository);
 
         ServiceResult<List<UserSelectColumn>> result =
                 service.findAllUsersWithLimitAndOffset(PageRequest.of(0, 101));
@@ -209,7 +227,7 @@ class UserServiceTests {
         when(repository.findAllUsersWithLimitAndOffset(orderedPageable)).thenReturn(List.of());
 
         ServiceResult<List<UserSelectColumn>> result =
-                new UserService(repository).findAllUsersWithLimitAndOffset(pageable);
+                newService(repository).findAllUsersWithLimitAndOffset(pageable);
 
         assertEquals(HttpStatus.NOT_FOUND, result.status());
         assertEquals("No users found", result.message());
@@ -224,7 +242,7 @@ class UserServiceTests {
         user.setId("user-1");
         when(repository.findById("user-1")).thenReturn(Optional.of(user));
 
-        ServiceResult<UserEntity> result = new UserService(repository).findUserById("user-1");
+        ServiceResult<UserEntity> result = newService(repository).findUserById("user-1");
 
         assertSame(user, result.data());
         assertEquals(HttpStatus.OK, result.status());
@@ -236,7 +254,7 @@ class UserServiceTests {
         UserRepository repository = mock(UserRepository.class);
         when(repository.findById("missing-id")).thenReturn(Optional.empty());
 
-        ServiceResult<UserEntity> result = new UserService(repository).findUserById("missing-id");
+        ServiceResult<UserEntity> result = newService(repository).findUserById("missing-id");
 
         assertEquals(HttpStatus.NOT_FOUND, result.status());
         assertEquals("User not found with id: missing-id", result.message());
@@ -251,7 +269,7 @@ class UserServiceTests {
         when(repository.findUserByIdWithSelectedColumns("user-1")).thenReturn(Optional.of(projection));
 
         ServiceResult<UserSelectColumn> result =
-                new UserService(repository).findUserByIdWithSelectedColumns("user-1");
+                newService(repository).findUserByIdWithSelectedColumns("user-1");
 
         assertSame(projection, result.data());
         assertEquals(HttpStatus.OK, result.status());
@@ -264,7 +282,7 @@ class UserServiceTests {
         when(repository.findUserByIdWithSelectedColumns("missing-id")).thenReturn(Optional.empty());
 
         ServiceResult<UserSelectColumn> result =
-                new UserService(repository).findUserByIdWithSelectedColumns("missing-id");
+                newService(repository).findUserByIdWithSelectedColumns("missing-id");
 
         assertEquals(HttpStatus.NOT_FOUND, result.status());
         assertEquals("User not found with id: missing-id", result.message());
@@ -274,6 +292,7 @@ class UserServiceTests {
     @Test
     void updateUserUpdatesFieldsAndSavesUser() {
         UserRepository repository = mock(UserRepository.class);
+        RefreshTokenRepository refreshTokenRepository = mock(RefreshTokenRepository.class);
         UserEntity user = new UserEntity();
         user.setEmail("old@example.com");
         user.setPassword("oldpassword");
@@ -283,7 +302,10 @@ class UserServiceTests {
         when(repository.existsByEmailAndIdNot("new@example.com", "user-1")).thenReturn(false);
         when(repository.saveAndFlush(user)).thenReturn(user);
 
-        ServiceResult<UserEntity> result = new UserService(repository).updateUser("user-1", request);
+        ServiceResult<UserEntity> result = new UserService(
+                repository,
+                new PasswordHashService(),
+                refreshTokenRepository).updateUser("user-1", request);
 
         assertSame(user, result.data());
         assertEquals(HttpStatus.OK, result.status());
@@ -292,6 +314,8 @@ class UserServiceTests {
         assertFalse(user.getIsActive());
         assertNotNull(user.getUpdatedAt());
         verify(repository).saveAndFlush(user);
+        verify(refreshTokenRepository)
+                .revokeActiveTokensForUser(org.mockito.ArgumentMatchers.eq("user-1"), any());
     }
 
     // Verifies that an email used by another user prevents an update.
@@ -305,7 +329,7 @@ class UserServiceTests {
         when(repository.findByIdForUpdate("user-1")).thenReturn(Optional.of(user));
         when(repository.existsByEmailAndIdNot("taken@example.com", "user-1")).thenReturn(true);
 
-        ServiceResult<UserEntity> result = new UserService(repository).updateUser("user-1", request);
+        ServiceResult<UserEntity> result = newService(repository).updateUser("user-1", request);
 
         assertEquals(HttpStatus.CONFLICT, result.status());
         assertEquals("Email already exists", result.message());
@@ -328,7 +352,7 @@ class UserServiceTests {
         when(repository.existsByEmailAndIdNot("current@example.com", "user-1")).thenReturn(false);
         when(repository.saveAndFlush(user)).thenReturn(user);
 
-        ServiceResult<UserEntity> result = new UserService(repository).updateUser("user-1", request);
+        ServiceResult<UserEntity> result = newService(repository).updateUser("user-1", request);
 
         assertSame(user, result.data());
         assertEquals(HttpStatus.OK, result.status());
@@ -340,6 +364,30 @@ class UserServiceTests {
         verify(repository).saveAndFlush(user);
     }
 
+    @Test
+    void updateWithSamePasswordDoesNotRevokeRefreshTokens() {
+        UserRepository repository = mock(UserRepository.class);
+        RefreshTokenRepository refreshTokenRepository = mock(RefreshTokenRepository.class);
+        PasswordHashService passwordHashService = new PasswordHashService();
+        UserEntity user = new UserEntity();
+        user.setId("user-1");
+        user.setEmail("current@example.com");
+        user.setPassword(passwordHashService.encode("samepassword"));
+        user.setIsActive(true);
+        UserRequest request = new UserRequest("current@example.com", "samepassword", true);
+        when(repository.findByIdForUpdate("user-1")).thenReturn(Optional.of(user));
+        when(repository.existsByEmailAndIdNot("current@example.com", "user-1")).thenReturn(false);
+        when(repository.saveAndFlush(user)).thenReturn(user);
+
+        ServiceResult<UserEntity> result = new UserService(
+                repository,
+                passwordHashService,
+                refreshTokenRepository).updateUser("user-1", request);
+
+        assertEquals(HttpStatus.OK, result.status());
+        verify(refreshTokenRepository, never()).revokeActiveTokensForUser(any(), any());
+    }
+
     // Verifies that updating a missing user returns not-found without saving.
     @Test
     void updateUserReturnsNotFoundWhenUserDoesNotExist() {
@@ -347,7 +395,7 @@ class UserServiceTests {
         when(repository.findByIdForUpdate("missing-id")).thenReturn(Optional.empty());
 
         ServiceResult<UserEntity> result =
-                new UserService(repository).updateUser("missing-id", null);
+                newService(repository).updateUser("missing-id", null);
 
         assertEquals(HttpStatus.NOT_FOUND, result.status());
         assertEquals("User not found with id: missing-id", result.message());
@@ -361,7 +409,7 @@ class UserServiceTests {
         UserEntity user = new UserEntity();
         when(repository.findByIdForUpdate("user-1")).thenReturn(Optional.of(user));
 
-        ServiceResult<UserEntity> result = new UserService(repository).deleteUser("user-1");
+        ServiceResult<UserEntity> result = newService(repository).deleteUser("user-1");
 
         assertEquals(HttpStatus.OK, result.status());
         assertEquals("User deleted successfully", result.message());
@@ -375,7 +423,7 @@ class UserServiceTests {
         UserRepository repository = mock(UserRepository.class);
         when(repository.findByIdForUpdate("missing-id")).thenReturn(Optional.empty());
 
-        ServiceResult<UserEntity> result = new UserService(repository).deleteUser("missing-id");
+        ServiceResult<UserEntity> result = newService(repository).deleteUser("missing-id");
 
         assertEquals(HttpStatus.NOT_FOUND, result.status());
         assertEquals("User not found with id: missing-id", result.message());
@@ -392,9 +440,9 @@ class UserServiceTests {
         user.setEmail("user@example.com");
         user.setPassword(passwordHashService.encode("password123"));
         user.setIsActive(true);
-        when(repository.findByEmail("user@example.com")).thenReturn(Optional.of(user));
+        when(repository.findByEmailForUpdate("user@example.com")).thenReturn(Optional.of(user));
 
-        ServiceResult<UserEntity> result = new UserService(repository, passwordHashService)
+        ServiceResult<UserEntity> result = newService(repository, passwordHashService)
                 .login(new LoginRequest("user@example.com", "password123"));
 
         assertEquals(HttpStatus.OK, result.status());
@@ -413,10 +461,10 @@ class UserServiceTests {
         user.setEmail("legacy@example.com");
         user.setPassword("{md5}482c811da5d5b4bc6d497ffa98491e38");
         user.setIsActive(true);
-        when(repository.findByEmail("legacy@example.com")).thenReturn(Optional.of(user));
+        when(repository.findByEmailForUpdate("legacy@example.com")).thenReturn(Optional.of(user));
         when(repository.saveAndFlush(user)).thenReturn(user);
 
-        ServiceResult<UserEntity> result = new UserService(repository, passwordHashService)
+        ServiceResult<UserEntity> result = newService(repository, passwordHashService)
                 .login(new LoginRequest("legacy@example.com", "password123"));
 
         assertEquals(HttpStatus.OK, result.status());
@@ -430,14 +478,14 @@ class UserServiceTests {
     @Test
     void loginRejectsUnknownEmailAndWrongPasswordWithSameResult() {
         UserRepository repository = mock(UserRepository.class);
-        PasswordHashService passwordHashService = new PasswordHashService("ARGON2");
+        PasswordHashService passwordHashService = spy(new PasswordHashService("ARGON2"));
         UserEntity user = new UserEntity();
         user.setEmail("user@example.com");
         user.setPassword(passwordHashService.encode("password123"));
         user.setIsActive(true);
-        when(repository.findByEmail("user@example.com")).thenReturn(Optional.of(user));
-        when(repository.findByEmail("missing@example.com")).thenReturn(Optional.empty());
-        UserService service = new UserService(repository, passwordHashService);
+        when(repository.findByEmailForUpdate("user@example.com")).thenReturn(Optional.of(user));
+        when(repository.findByEmailForUpdate("missing@example.com")).thenReturn(Optional.empty());
+        UserService service = newService(repository, passwordHashService);
 
         ServiceResult<UserEntity> unknownEmail =
                 service.login(new LoginRequest("missing@example.com", "password123"));
@@ -450,6 +498,8 @@ class UserServiceTests {
         assertEquals(unknownEmail.message(), wrongPassword.message());
         assertNull(unknownEmail.data());
         assertNull(wrongPassword.data());
+        verify(passwordHashService).matchesDummyPassword("password123");
+        verify(passwordHashService).matches("wrong-password", user.getPassword());
         verify(repository, never()).saveAndFlush(any());
     }
 
@@ -457,18 +507,19 @@ class UserServiceTests {
     @Test
     void loginRejectsInactiveUser() {
         UserRepository repository = mock(UserRepository.class);
-        PasswordHashService passwordHashService = new PasswordHashService("ARGON2");
+        PasswordHashService passwordHashService = spy(new PasswordHashService("ARGON2"));
         UserEntity user = new UserEntity();
         user.setEmail("inactive@example.com");
         user.setPassword(passwordHashService.encode("password123"));
         user.setIsActive(false);
-        when(repository.findByEmail("inactive@example.com")).thenReturn(Optional.of(user));
+        when(repository.findByEmailForUpdate("inactive@example.com")).thenReturn(Optional.of(user));
 
-        ServiceResult<UserEntity> result = new UserService(repository, passwordHashService)
+        ServiceResult<UserEntity> result = newService(repository, passwordHashService)
                 .login(new LoginRequest("inactive@example.com", "password123"));
 
         assertEquals(HttpStatus.UNAUTHORIZED, result.status());
         assertEquals("Invalid email or password", result.message());
+        verify(passwordHashService).matches("password123", user.getPassword());
         verify(repository, never()).saveAndFlush(any());
     }
 }
