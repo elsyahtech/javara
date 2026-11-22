@@ -22,6 +22,7 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.elsyah.tech.javara.middleware.store.RedisLoginRateLimitStore;
+import com.elsyah.tech.javara.testsupport.PostgresRedisTestSupport;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -33,7 +34,7 @@ import com.elsyah.tech.javara.middleware.store.RedisLoginRateLimitStore;
         "app.middleware.rate-limit.login.window=30s",
         "app.middleware.rate-limit.login.key-prefix=test:javara:login-rate-integration"
 })
-class RedisLoginRateLimitStoreIntegrationTests {
+class RedisLoginRateLimitStoreIntegrationTests extends PostgresRedisTestSupport {
     @Autowired
     private RedisLoginRateLimitStore store;
 

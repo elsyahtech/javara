@@ -12,6 +12,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import java.util.List;
 import java.util.Optional;
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 
 import com.elsyah.tech.javara.entity.UserEntity;
@@ -30,7 +32,6 @@ import com.elsyah.tech.javara.request.LoginRequest;
 import com.elsyah.tech.javara.service.UserService;
 import com.elsyah.tech.javara.service.ServiceResult;
 import com.elsyah.tech.javara.utils.security.PasswordHashService;
-import com.elsyah.tech.javara.utils.security.PasswordAlgorithm;
 
 
 /**
@@ -152,14 +153,48 @@ class UserServiceTests {
         UserRepository repository = mock(UserRepository.class);
         UserSelectColumn projection = mock(UserSelectColumn.class);
         Pageable pageable = PageRequest.of(1, 10);
-        when(repository.findAllUsersWithLimitAndOffset(pageable)).thenReturn(List.of(projection));
+        Pageable orderedPageable = PageRequest.of(
+                1,
+                10,
+                Sort.by(Sort.Order.asc("createdAt"), Sort.Order.asc("id")));
+        when(repository.findAllUsersWithLimitAndOffset(orderedPageable))
+                .thenReturn(List.of(projection));
 
         ServiceResult<List<UserSelectColumn>> result =
                 new UserService(repository).findAllUsersWithLimitAndOffset(pageable);
 
         assertEquals(HttpStatus.OK, result.status());
         assertEquals(List.of(projection), result.data());
-        verify(repository).findAllUsersWithLimitAndOffset(pageable);
+        verify(repository).findAllUsersWithLimitAndOffset(orderedPageable);
+    }
+
+    @Test
+    void findAllUsersWithLimitAndOffsetAddsUniqueTieBreakerToRequestedSort() {
+        UserRepository repository = mock(UserRepository.class);
+        Pageable pageable = PageRequest.of(0, 20, Sort.by(Sort.Order.desc("email")));
+        Pageable orderedPageable = PageRequest.of(
+                0,
+                20,
+                Sort.by(Sort.Order.desc("email"), Sort.Order.asc("id")));
+        when(repository.findAllUsersWithLimitAndOffset(orderedPageable)).thenReturn(List.of());
+
+        new UserService(repository).findAllUsersWithLimitAndOffset(pageable);
+
+        verify(repository).findAllUsersWithLimitAndOffset(orderedPageable);
+    }
+
+    @Test
+    void findAllUsersWithLimitAndOffsetRejectsPageSizesOutsideAllowedRange() {
+        UserRepository repository = mock(UserRepository.class);
+        UserService service = new UserService(repository);
+
+        ServiceResult<List<UserSelectColumn>> result =
+                service.findAllUsersWithLimitAndOffset(PageRequest.of(0, 101));
+
+        assertEquals(HttpStatus.BAD_REQUEST, result.status());
+        assertEquals("Page size must be between 1 and 100", result.message());
+        assertNull(result.data());
+        verifyNoInteractions(repository);
     }
 
     // Verifies that paginated projection queries return not-found when no users exist.
@@ -167,7 +202,11 @@ class UserServiceTests {
     void findAllUsersWithLimitAndOffsetReturnsNotFoundWhenEmpty() {
         UserRepository repository = mock(UserRepository.class);
         Pageable pageable = PageRequest.of(1, 10);
-        when(repository.findAllUsersWithLimitAndOffset(pageable)).thenReturn(List.of());
+        Pageable orderedPageable = PageRequest.of(
+                1,
+                10,
+                Sort.by(Sort.Order.asc("createdAt"), Sort.Order.asc("id")));
+        when(repository.findAllUsersWithLimitAndOffset(orderedPageable)).thenReturn(List.of());
 
         ServiceResult<List<UserSelectColumn>> result =
                 new UserService(repository).findAllUsersWithLimitAndOffset(pageable);
@@ -372,8 +411,7 @@ class UserServiceTests {
         UserEntity user = new UserEntity();
         user.setId("user-1");
         user.setEmail("legacy@example.com");
-        user.setPassword(passwordHashService.encode(
-                "password123", PasswordAlgorithm.MD5));
+        user.setPassword("{md5}482c811da5d5b4bc6d497ffa98491e38");
         user.setIsActive(true);
         when(repository.findByEmail("legacy@example.com")).thenReturn(Optional.of(user));
         when(repository.saveAndFlush(user)).thenReturn(user);

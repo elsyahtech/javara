@@ -205,7 +205,7 @@ class UserControllerTests {
                 new ServiceResult<>(List.of(projection), HttpStatus.OK, "Users retrieved successfully"));
 
         ResponseEntity<ApiResponse<List<UserResponseWithSelectColumn>>> response =
-                new UserController(service).findAllUsersWithLimitAndOffset(pageable);
+                new UserController(service).findAllUsersWithLimitAndOffset(pageable, 10);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertNotNull(response.getBody());
@@ -228,13 +228,27 @@ class UserControllerTests {
                 new ServiceResult<>(null, HttpStatus.NOT_FOUND, "No users found"));
 
         ResponseEntity<ApiResponse<List<UserResponseWithSelectColumn>>> response =
-                new UserController(service).findAllUsersWithLimitAndOffset(pageable);
+                new UserController(service).findAllUsersWithLimitAndOffset(pageable, 10);
 
         assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
         assertNotNull(response.getBody());
         assertFalse(response.getBody().isSuccess());
         assertEquals("No users found", response.getBody().getError());
         assertNull(response.getBody().getData());
+    }
+
+    @Test
+    void findAllUsersWithLimitAndOffsetRejectsInvalidRequestedSize() {
+        UserService service = mock(UserService.class);
+        ResponseEntity<ApiResponse<List<UserResponseWithSelectColumn>>> response =
+                new UserController(service).findAllUsersWithLimitAndOffset(
+                        PageRequest.of(0, 20),
+                        0);
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertFalse(response.getBody().isSuccess());
+        verifyNoInteractions(service);
     }
 
     // Verifies that a found user is returned through the standard API response wrapper.

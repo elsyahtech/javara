@@ -17,6 +17,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import com.elsyah.tech.javara.entity.UserEntity;
 import com.elsyah.tech.javara.service.AccessTokenService;
+import com.elsyah.tech.javara.testsupport.PostgresRedisTestSupport;
 
 @SpringBootTest(properties = {
         "app.security.jwt.signing-key=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
@@ -25,7 +26,7 @@ import com.elsyah.tech.javara.service.AccessTokenService;
         "app.security.bootstrap-admin.enabled=false"
 })
 @AutoConfigureMockMvc
-class CookieSecurityIntegrationTests {
+class CookieSecurityIntegrationTests extends PostgresRedisTestSupport {
     @Autowired
     private MockMvc mockMvc;
 

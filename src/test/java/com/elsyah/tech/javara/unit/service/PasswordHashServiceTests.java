@@ -44,6 +44,10 @@ class PasswordHashServiceTests {
     void shouldRejectUnsupportedConfiguredAlgorithm() {
         assertThatIllegalArgumentException()
                 .isThrownBy(() -> new PasswordHashService("unsupported"));
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> new PasswordHashService("SHA256"));
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> new PasswordHashService("MD5"));
     }
 
     // Verifies that an existing BCrypt password can still be verified.
@@ -78,9 +82,7 @@ class PasswordHashServiceTests {
     // Verifies SHA256 compatibility using a prefixed legacy hash.
     @Test
     void shouldMatchPrefixedSha256Password() {
-        String hash = passwordHashService.encode(
-                "password123",
-                PasswordAlgorithm.SHA256);
+        String hash = "{sha256}" + sha256("password123");
 
         assertThat(passwordHashService.matches("password123", hash)).isTrue();
         assertThat(passwordHashService.requiresUpgrade(hash)).isTrue();
@@ -89,9 +91,7 @@ class PasswordHashServiceTests {
     // Verifies MD5 compatibility using a prefixed legacy hash.
     @Test
     void shouldMatchPrefixedMd5Password() {
-        String hash = passwordHashService.encode(
-                "password123",
-                PasswordAlgorithm.MD5);
+        String hash = "{md5}" + md5("password123");
 
         assertThat(passwordHashService.matches("password123", hash)).isTrue();
         assertThat(passwordHashService.requiresUpgrade(hash)).isTrue();

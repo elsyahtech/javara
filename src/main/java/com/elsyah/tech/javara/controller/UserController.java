@@ -17,7 +17,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.http.HttpStatus;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import com.elsyah.tech.javara.service.UserService;
 import com.elsyah.tech.javara.request.UserRequest;
@@ -161,7 +163,17 @@ public class UserController {
     @GetMapping("/findAllWithLimitAndOffset")
     @PreAuthorize("hasRole('ADMIN')")
     @ResponseStatus (HttpStatus.OK)
-    public ResponseEntity<ApiResponse<List<UserResponseWithSelectColumn>>> findAllUsersWithLimitAndOffset(Pageable pageable) {
+    public ResponseEntity<ApiResponse<List<UserResponseWithSelectColumn>>> findAllUsersWithLimitAndOffset(
+            @PageableDefault(size = 20) Pageable pageable,
+            @RequestParam(name = "size", required = false) Integer requestedSize) {
+        if (requestedSize != null
+                && (requestedSize < 1 || requestedSize != pageable.getPageSize())) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.failure(
+                            HttpStatus.BAD_REQUEST,
+                            "Page size must be between 1 and 100"));
+        }
+
         ServiceResult<List<UserSelectColumn>> result = service.findAllUsersWithLimitAndOffset(pageable);
         HttpStatus status = result.status();
 

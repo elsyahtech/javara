@@ -8,6 +8,8 @@ import java.time.LocalDateTime;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -31,6 +33,8 @@ import com.elsyah.tech.javara.utils.security.PasswordHashService;
  */
 @Service
 public class UserService {
+    private static final int MAX_PAGE_SIZE = 100;
+
     /**
      * The UserRepository instance used for database operations related to users.
      */
@@ -136,7 +140,24 @@ public class UserService {
      */
     @Transactional (readOnly = true)
     public ServiceResult<List<UserSelectColumn>> findAllUsersWithLimitAndOffset(Pageable pageable) {
-        List<UserSelectColumn> users = repository.findAllUsersWithLimitAndOffset(pageable);
+        if (pageable.getPageSize() < 1 || pageable.getPageSize() > MAX_PAGE_SIZE) {
+            return new ServiceResult<>(
+                    null,
+                    HttpStatus.BAD_REQUEST,
+                    "Page size must be between 1 and " + MAX_PAGE_SIZE);
+        }
+
+        Sort sort = pageable.getSort();
+        if (sort.isUnsorted()) {
+            sort = Sort.by(Sort.Order.asc("createdAt"));
+        }
+        if (sort.getOrderFor("id") == null) {
+            sort = sort.and(Sort.by(Sort.Order.asc("id")));
+        }
+
+        Pageable orderedPageable =
+                PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sort);
+        List<UserSelectColumn> users = repository.findAllUsersWithLimitAndOffset(orderedPageable);
 
         return users.isEmpty()
                 ? new ServiceResult<>(null, HttpStatus.NOT_FOUND, "No users found")

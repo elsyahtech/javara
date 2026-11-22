@@ -22,6 +22,7 @@ import com.elsyah.tech.javara.entity.UserEntity;
 import com.elsyah.tech.javara.request.UserRequest;
 import com.elsyah.tech.javara.service.UserService;
 import com.elsyah.tech.javara.repository.UserRepository;
+import com.elsyah.tech.javara.testsupport.PostgresRedisTestSupport;
 
 /**
  * 
@@ -47,7 +48,7 @@ import com.elsyah.tech.javara.repository.UserRepository;
         "app.security.bootstrap-admin.enabled=false"
 })
 @Transactional
-class UserRepositoryTests {
+class UserRepositoryTests extends PostgresRedisTestSupport {
 
     @Autowired
     private UserRepository repository;
@@ -57,6 +58,11 @@ class UserRepositoryTests {
 
     @Autowired
     private UserService userService;
+
+    @Test
+    void demoUserIsNotSeeded() {
+        assertTrue(repository.findByEmail("user-dummy@example.com").isEmpty());
+    }
 
     // Verifies that the database rejects an active duplicate email through the unique partial index.
     @Test

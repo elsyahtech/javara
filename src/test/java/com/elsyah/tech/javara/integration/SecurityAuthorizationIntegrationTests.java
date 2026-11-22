@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.util.UUID;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -16,7 +17,10 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.elsyah.tech.javara.entity.UserEntity;
 import com.elsyah.tech.javara.entity.UserRole;
+import com.elsyah.tech.javara.repository.UserRepository;
 import com.elsyah.tech.javara.service.AccessTokenService;
+import com.elsyah.tech.javara.testsupport.PostgresRedisTestSupport;
+import com.elsyah.tech.javara.utils.security.PasswordHashService;
 
 @SpringBootTest(properties = {
         "app.security.jwt.signing-key=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
@@ -24,12 +28,27 @@ import com.elsyah.tech.javara.service.AccessTokenService;
         "app.security.bootstrap-admin.enabled=false"
 })
 @AutoConfigureMockMvc
-class SecurityAuthorizationIntegrationTests {
+class SecurityAuthorizationIntegrationTests extends PostgresRedisTestSupport {
     @Autowired
     private MockMvc mockMvc;
 
     @Autowired
     private AccessTokenService accessTokenService;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private PasswordHashService passwordHashService;
+
+    private String createdUserId;
+
+    @AfterEach
+    void cleanUpTestUser() {
+        if (createdUserId != null) {
+            userRepository.deleteById(createdUserId);
+        }
+    }
 
     // Verifies that the welcome endpoint is public while user endpoints reject anonymous requests.
     @Test
@@ -58,6 +77,14 @@ class SecurityAuthorizationIntegrationTests {
         admin.setId("admin-1");
         admin.setEmail("admin@example.com");
         admin.setRole(UserRole.ADMIN);
+
+        UserEntity existingUser = new UserEntity();
+        createdUserId = UUID.randomUUID().toString();
+        existingUser.setId(createdUserId);
+        existingUser.setEmail("authorization-" + createdUserId + "@example.com");
+        existingUser.setPassword(passwordHashService.encode("unused-test-password"));
+        existingUser.setIsActive(true);
+        userRepository.saveAndFlush(existingUser);
 
         mockMvc.perform(get("/api/v1/users")
                         .header("Authorization", "Bearer " + accessTokenService.issue(admin)))

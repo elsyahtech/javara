@@ -26,6 +26,7 @@ import com.elsyah.tech.javara.repository.UserRepository;
 import com.elsyah.tech.javara.request.UserRequest;
 import com.elsyah.tech.javara.service.ServiceResult;
 import com.elsyah.tech.javara.service.UserService;
+import com.elsyah.tech.javara.testsupport.PostgresRedisTestSupport;
 import com.elsyah.tech.javara.utils.security.PasswordHashService;
 
 @SpringBootTest
@@ -33,12 +34,9 @@ import com.elsyah.tech.javara.utils.security.PasswordHashService;
         "app.security.jwt.signing-key=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
         "app.security.jwt.transport=BEARER",
         "app.security.bootstrap-admin.enabled=false",
-        "spring.datasource.url=jdbc:postgresql://localhost:5432/spring",
-        "spring.datasource.username=elman",
-        "spring.datasource.password=chamonk89",
         "spring.jpa.hibernate.ddl-auto=none"
 })
-class UserConcurrentIntegrationTests {
+class UserConcurrentIntegrationTests extends PostgresRedisTestSupport {
 
     private static ExecutorService executor;
 

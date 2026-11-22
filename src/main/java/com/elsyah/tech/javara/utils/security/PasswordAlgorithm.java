@@ -4,9 +4,7 @@ import java.util.Locale;
 
 public enum PasswordAlgorithm {
     ARGON2,
-    BCRYPT,
-    SHA256,
-    MD5;
+    BCRYPT;
 
     public static PasswordAlgorithm fromConfiguration(String algorithm) {
         if (algorithm == null || algorithm.isBlank()) {
@@ -19,7 +17,7 @@ public enum PasswordAlgorithm {
         } catch (IllegalArgumentException exception) {
             throw new IllegalArgumentException(
                     "Unsupported password algorithm '" + algorithm
-                            + "'. Supported values are: ARGON2, BCRYPT, SHA256, MD5",
+                            + "'. Supported values are: ARGON2, BCRYPT",
                     exception);
         }
     }

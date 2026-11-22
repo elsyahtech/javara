@@ -415,9 +415,9 @@ The Spring `Pageable` parameters are:
 
 - `page`: zero-based page number
 - `size`: number of records per page
-- `sort`: optional sort expression
+- `sort`: optional sort expression; results are stabilized by a unique ID tie-breaker
 
-The endpoint should have a maximum size limit in a future hardening pass.
+The default page size is 20 and the maximum is 100. Requests outside the range 1–100 return `400 Bad Request`.
 
 ### Find User by ID
 
@@ -425,8 +425,11 @@ The endpoint should have a maximum size limit in a future hardening pass.
 GET /api/v1/users/{id}
 ```
 
+Set `USER_ID` to an ID returned by user creation or registration. No demo user is seeded.
+
 ```bash
-curl http://localhost:8080/api/v1/users/3746e32f-1bd6-4023-a608-f535696f5e01
+USER_ID="<id-from-create-or-register-response>"
+curl "http://localhost:8080/api/v1/users/$USER_ID"
 ```
 
 Success status: `200 OK`
@@ -440,7 +443,7 @@ GET /api/v1/users/findUserByIdWithSelectedColumns/{id}
 ```
 
 ```bash
-curl http://localhost:8080/api/v1/users/findUserByIdWithSelectedColumns/3746e32f-1bd6-4023-a608-f535696f5e01
+curl "http://localhost:8080/api/v1/users/findUserByIdWithSelectedColumns/$USER_ID"
 ```
 
 ### Update User
@@ -451,7 +454,7 @@ Content-Type: application/json
 ```
 
 ```bash
-curl -X PUT http://localhost:8080/api/v1/users/3746e32f-1bd6-4023-a608-f535696f5e01 \
+curl -X PUT "http://localhost:8080/api/v1/users/$USER_ID" \
   -H "Content-Type: application/json" \
   -d '{"email":"updated@example.com","password":"newpassword123","isActive":true}'
 ```
@@ -473,7 +476,7 @@ DELETE /api/v1/users/{id}
 ```
 
 ```bash
-curl -X DELETE http://localhost:8080/api/v1/users/3746e32f-1bd6-4023-a608-f535696f5e01
+curl -X DELETE "http://localhost:8080/api/v1/users/$USER_ID"
 ```
 
 Deletion is soft:
@@ -582,9 +585,9 @@ app:
       algorithm: ARGON2
 ```
 
-Supported configuration values are `ARGON2`, `BCRYPT`, `SHA256`, and `MD5`. The setting is case-insensitive. For example, set it to `BCRYPT` to make create/update operations encode new passwords with BCrypt.
+Supported configuration values are `ARGON2` and `BCRYPT`. The setting is case-insensitive. For example, set it to `BCRYPT` to make create/update operations encode new passwords with BCrypt.
 
-Argon2 is the recommended default. SHA-256 and MD5 are available to accommodate legacy requirements, but are not suitable for password storage. Configuring either for new passwords logs a warning and is strongly discouraged.
+Argon2 is the recommended default. SHA-256 and MD5 are accepted only for verifying legacy password hashes; they cannot be selected for new password hashes.
 
 Supported formats are:
 
@@ -603,14 +606,13 @@ Example Argon2 value:
 {argon2}$argon2id$v=19$m=65536,t=3,p=4$...
 ```
 
-`PasswordHashService.matches(...)` verifies a raw password against any supported format. `requiresUpgrade(...)` identifies hashes that should be upgraded to the currently configured algorithm after a successful authentication flow.
+`PasswordHashService.matches(...)` verifies a raw password against any supported format. `requiresUpgrade(...)` identifies hashes that should be upgraded to the currently configured algorithm after a successful authentication flow. A successful login transparently upgrades a legacy hash.
 
-BCrypt, SHA-256, and MD5 remain available for compatibility, but:
+Legacy formats remain verifiable for compatibility, but:
 
 - Argon2 is the default for new passwords.
-- The configured algorithm is used for new passwords, including SHA-256 or MD5 if explicitly selected.
-- SHA-256 and MD5 must only be selected when compatibility requires them.
-- MD5 passwords should be migrated after the user's next successful login.
+- Only Argon2 and BCrypt can be selected for new passwords.
+- SHA-256 and MD5 hashes are upgraded to the configured algorithm after the user's next successful login.
 
 ## Redis Login Rate Limiting
 
@@ -707,13 +709,25 @@ They cover:
 - Concurrent deletes
 - Concurrent update/delete operations
 
-The integration test currently uses the active local PostgreSQL database configured in `config/application.yml` or test properties.
-
 Run everything:
 
 ```bash
 make test
 ```
+
+Integration tests use isolated PostgreSQL 16 and Redis 7 Testcontainers by default and require a running Docker daemon. `make install` can install Docker when it is unavailable. Test containers are temporary and do not use or modify the application's local database.
+
+To use dedicated test services instead, set all of these environment variables before running tests:
+
+```text
+JAVARA_TEST_POSTGRES_URL
+JAVARA_TEST_POSTGRES_USERNAME
+JAVARA_TEST_POSTGRES_PASSWORD
+JAVARA_TEST_REDIS_HOST
+JAVARA_TEST_REDIS_PORT
+```
+
+For Redis authentication, also set `JAVARA_TEST_REDIS_USERNAME` and `JAVARA_TEST_REDIS_PASSWORD`. The PostgreSQL database and Redis instance must be dedicated to tests because integration tests create and delete test data. Partial `JAVARA_TEST_*` configuration is rejected; tests never fall back to `config/application.yml`.
 
 Run only concurrent integration tests:
 
@@ -721,7 +735,7 @@ Run only concurrent integration tests:
 ./mvnw -Dtest='UserConcurrentIntegrationTests' test
 ```
 
-Integration tests should use a dedicated PostgreSQL database in CI or shared environments. The test cleanup deletes only records with its test email prefixes.
+The same Testcontainers or dedicated-service configuration applies to individual integration tests.
 
 ## Docker and PostgreSQL
 

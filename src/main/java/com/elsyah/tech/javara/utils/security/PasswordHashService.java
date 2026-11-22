@@ -11,16 +11,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
  * Encodes and verifies passwords while supporting modern and legacy formats.
  */
 @Service
 public class PasswordHashService {
-    private static final Logger logger = LoggerFactory.getLogger(PasswordHashService.class);
-
     private final Argon2PasswordEncoder argon2 =
             Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
     private final BCryptPasswordEncoder bcrypt = new BCryptPasswordEncoder(12);
@@ -30,12 +25,6 @@ public class PasswordHashService {
     public PasswordHashService(
             @Value("${app.security.password.algorithm:ARGON2}") String algorithm) {
         this.defaultAlgorithm = PasswordAlgorithm.fromConfiguration(algorithm);
-        if (defaultAlgorithm == PasswordAlgorithm.MD5
-                || defaultAlgorithm == PasswordAlgorithm.SHA256) {
-            logger.warn(
-                    "{} is not suitable for new password hashes. Use ARGON2 or BCRYPT.",
-                    defaultAlgorithm);
-        }
     }
 
     public PasswordHashService() {
@@ -57,8 +46,6 @@ public class PasswordHashService {
         return switch (algorithm) {
             case ARGON2 -> "{argon2}" + argon2.encode(rawPassword);
             case BCRYPT -> "{bcrypt}" + bcrypt.encode(rawPassword);
-            case SHA256 -> "{sha256}" + sha256(rawPassword);
-            case MD5 -> "{md5}" + md5(rawPassword);
         };
     }
 
@@ -131,8 +118,6 @@ public class PasswordHashService {
         return switch (algorithm) {
             case ARGON2 -> "{argon2}";
             case BCRYPT -> "{bcrypt}";
-            case SHA256 -> "{sha256}";
-            case MD5 -> "{md5}";
         };
     }
 
