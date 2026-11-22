@@ -32,7 +32,7 @@ Database implementations are maintained in separate branches rather than combine
 
 ```bash
 git clone https://github.com/elsyahtech/javara.git
-cd java-rest-api-starter
+cd javara
 ```
 
 ### 2. Switch to Your Database Branch
