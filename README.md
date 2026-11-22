@@ -1,6 +1,6 @@
 # JAVARA — Java REST Applications
 
-`JAVARA` is a collection of Java REST API Applications templates, organized into dedicated Git branches based on the target database.
+`JAVARA` is a collection of Java REST Applications templates, organized into dedicated Git branches based on the target database.
 
 The `main` branch serves as the repository overview and index of available database branches. Each database branch provides a self-contained starter template tailored to its respective datastore.
 
