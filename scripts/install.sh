@@ -269,7 +269,7 @@ write_managed_config() {
 server:
   address: 127.0.0.1
   port: 8080
-  forward-headers-strategy: framework
+  forward-headers-strategy: none
   shutdown: graceful
   compression:
     enabled: false

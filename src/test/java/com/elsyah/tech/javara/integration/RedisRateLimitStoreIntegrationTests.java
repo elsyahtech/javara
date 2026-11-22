@@ -109,9 +109,9 @@ class RedisRateLimitStoreIntegrationTests extends PostgresRedisTestSupport {
         }
     }
 
-    // Verifies that the registered MVC interceptor rejects excess login requests before validation.
+    // Verifies that framework mode consumes a forwarded address; the proxy must sanitize it.
     @Test
-    void loginEndpointUsesForwardedClientAddressAndEnforcesLimit() throws Exception {
+    void loginEndpointUsesForwardedAddressWhenFrameworkStrategyIsEnabled() throws Exception {
         String clientIp = "192.0.2.90";
 
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders

@@ -112,21 +112,77 @@ prefixes for environments sharing Redis. Exceeded limits return `429` with a
 
 ## Reverse proxies and client IPs
 
-The setup files configure:
+The generated local configuration binds the API to loopback and does not
+trust forwarded headers:
+
+```yaml
+server:
+  forward-headers-strategy: none
+```
+
+With `none`, rate limits use the address of the direct network peer. This is
+the safe default for a directly exposed application. If a reverse proxy is in
+front, requests will share the proxy's address until proxy handling is
+explicitly enabled.
+
+Set the following only when the application is reachable exclusively through
+a trusted reverse proxy or load balancer:
 
 ```yaml
 server:
   forward-headers-strategy: framework
 ```
 
-This allows Spring to resolve the client address from proxy forwarding
-headers. Enable it only when the application is behind a trusted reverse proxy
-or load balancer that removes incoming forwarding headers and sets its own.
-Otherwise, a client could supply a fake address and avoid per-IP limits.
+Equivalent environment variable:
 
-If the application is exposed directly without a trusted proxy, set the
-strategy to `none`. The local installer binds the API to loopback; configure
-your production network and proxy deliberately.
+```text
+SERVER_FORWARD_HEADERS_STRATEGY=framework
+```
+
+`framework` makes Spring honor forwarded headers; it does not verify which
+proxy sent them. Restrict network access to the application port so only the
+proxy can connect, and configure the public-facing proxy to discard
+client-supplied forwarding headers and write canonical ones.
+
+### Nginx at the public edge
+
+When Nginx is the first trusted hop, overwrite the forwarding headers instead
+of appending to values supplied by the client:
+
+```nginx
+location / {
+    proxy_pass http://javara; # Replace with the private upstream/service name.
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $host;
+}
+```
+
+Do not expose the JAVARA listener publicly; allow connections to it only from
+Nginx. If a CDN or load balancer sits in front of Nginx, trust only its known
+source CIDRs and configure Nginx's real-IP handling before using
+`$remote_addr`.
+
+### Traefik behind an upstream load balancer
+
+If Traefik receives requests from another load balancer, trust only that
+load balancer's actual source addresses. Replace this documentation-only
+address with the CIDR used in your network:
+
+```yaml
+entryPoints:
+  websecure:
+    address: ":443"
+    forwardedHeaders:
+      insecure: false
+      trustedIPs:
+        - "198.51.100.10/32"
+```
+
+Do not set `insecure: true`. Keep JAVARA's backend port private so clients
+cannot bypass Traefik and send their own headers directly.
 
 ## Browser CORS and cookies
 

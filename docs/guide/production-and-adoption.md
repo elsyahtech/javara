@@ -49,8 +49,11 @@ add and test that control before exposing the service.
 ### Network and browser security
 
 - Serve traffic over HTTPS.
-- If `server.forward-headers-strategy` is enabled, place the application
-  behind a trusted proxy that overwrites forwarding headers.
+- Keep `server.forward-headers-strategy: none` for direct connections. Set it
+  to `framework` only behind a trusted proxy that overwrites client-supplied
+  forwarding headers, and block public access to the application port.
+- Test that changing `X-Forwarded-For` cannot bypass rate limits at the edge
+  proxy, not only in application-level tests.
 - Restrict CORS to known origins. Do not use wildcard origins with cookies.
 - Use cookie transport and CSRF protection where appropriate for browser
   clients; test `SameSite`, `Secure`, and domain settings in the real
