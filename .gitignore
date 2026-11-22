@@ -2,6 +2,8 @@
 .vscode/
 .gitattributes
 HELP.md
+/config/
+/docs/
 /target
 /src
 Makefile

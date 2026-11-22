@@ -80,12 +80,12 @@ Choose the branch that matches your target database:
 | :--- | :--- | :--- |
 | `oracle` | Oracle | Relational (SQL) |
 | `sqlserver` | SQL Server | Relational (SQL) |
-| `postgres` | PostgreSQL | Relational (SQL) |
+| [`postgres`](https://github.com/elsyahtech/javara/tree/postgres) | PostgreSQL | Relational (SQL) |
 | `mysql` | MySQL | Relational (SQL) |
 | `sqlite` | SQLite | Embedded Relational (SQL) |
 | `mongo` | MongoDB | Document (NoSQL) |
 | `scylla` | ScyllaDB | Wide-Column (NoSQL) |
-| `redis` | Redis | Memcache |
+| `redis` | Redis | Key-Value (NoSQL) |
 
 Each database implementation is maintained in its own branch rather than mixing all database configurations into a single branch.
 
