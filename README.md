@@ -31,7 +31,7 @@ Database implementations are maintained in separate branches rather than combine
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/elsyahtech/java-rest-api-starter.git
+git clone https://github.com/elsyahtech/javara.git
 cd java-rest-api-starter
 ```
 
