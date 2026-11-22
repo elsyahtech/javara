@@ -78,13 +78,14 @@ Choose the branch that matches your target database:
 
 | Branch | Database | Type |
 | :--- | :--- | :--- |
+| `oracle` | Oracle | Relational (SQL) |
+| `sqlserver` | SQL Server | Relational (SQL) |
 | `postgres` | PostgreSQL | Relational (SQL) |
 | `mysql` | MySQL | Relational (SQL) |
-| `sqlserver` | SQL Server | Relational (SQL) |
-| `oracle` | Oracle | Relational (SQL) |
 | `sqlite` | SQLite | Embedded Relational (SQL) |
 | `mongo` | MongoDB | Document (NoSQL) |
 | `scylla` | ScyllaDB | Wide-Column (NoSQL) |
+| `redis` | Redis | Memcache |
 
 Each database implementation is maintained in its own branch rather than mixing all database configurations into a single branch.
 
