@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.UUID;
@@ -31,7 +32,7 @@ class AccessTokenServiceTests {
         JwtTokenConfiguration configuration = new JwtTokenConfiguration();
         JwtEncoder encoder = configuration.jwtEncoder(properties);
         JwtDecoder decoder = configuration.jwtDecoder(properties);
-        Instant now = Instant.parse("2026-11-23T12:00:00Z");
+        Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
         AccessTokenService service = new AccessTokenService(
                 encoder, properties, Clock.fixed(now, ZoneOffset.UTC));
         UserEntity user = new UserEntity();
