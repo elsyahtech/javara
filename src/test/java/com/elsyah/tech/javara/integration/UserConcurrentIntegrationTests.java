@@ -22,15 +22,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import com.elsyah.tech.javara.entity.UserEntity;
-import com.elsyah.tech.javara.repository.RefreshTokenRepository;
-import com.elsyah.tech.javara.repository.UserRepository;
-import com.elsyah.tech.javara.request.LoginRequest;
-import com.elsyah.tech.javara.request.UserRequest;
-import com.elsyah.tech.javara.service.AuthService;
-import com.elsyah.tech.javara.service.AuthServiceResult;
-import com.elsyah.tech.javara.service.ServiceResult;
-import com.elsyah.tech.javara.service.UserService;
+import com.elsyah.tech.javara.entity.user.UserEntity;
+import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
+import com.elsyah.tech.javara.repository.user.UserRepository;
+import com.elsyah.tech.javara.request.auth.LoginRequest;
+import com.elsyah.tech.javara.request.user.UserRequest;
+import com.elsyah.tech.javara.service.auth.AuthService;
+import com.elsyah.tech.javara.service.auth.AuthServiceResult;
+import com.elsyah.tech.javara.service.common.ServiceResult;
+import com.elsyah.tech.javara.service.user.UserService;
 import com.elsyah.tech.javara.testsupport.PostgresRedisTestSupport;
 import com.elsyah.tech.javara.utils.security.PasswordHashService;
 
@@ -133,7 +133,7 @@ class UserConcurrentIntegrationTests extends PostgresRedisTestSupport {
     @Test
     void concurrentUpdateSerializesMutationsForOneUser() throws Exception {
         UserEntity user = new UserEntity();
-        user.setId(UUID.randomUUID().toString());
+        user.setId(UUID.randomUUID());
         user.setEmail("before-" + UUID.randomUUID() + "@example.com");
         user.setPassword("initial-password");
         user.setIsActive(true);
@@ -220,7 +220,7 @@ class UserConcurrentIntegrationTests extends PostgresRedisTestSupport {
     @Test
     void concurrentDeleteReturnsOneSuccessAndOneNotFound() throws Exception {
         UserEntity user = new UserEntity();
-        user.setId(UUID.randomUUID().toString());
+        user.setId(UUID.randomUUID());
         user.setEmail("delete-" + UUID.randomUUID() + "@example.com");
         user.setPassword("password123");
         user.setIsActive(true);
@@ -252,7 +252,7 @@ class UserConcurrentIntegrationTests extends PostgresRedisTestSupport {
     @Test
     void concurrentUpdateAndDeleteProducesConsistentFinalState() throws Exception {
         UserEntity user = new UserEntity();
-        user.setId(UUID.randomUUID().toString());
+        user.setId(UUID.randomUUID());
         user.setEmail("mixed-" + UUID.randomUUID() + "@example.com");
         user.setPassword("initial-password");
         user.setIsActive(true);

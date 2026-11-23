@@ -15,7 +15,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-import com.elsyah.tech.javara.response.ApiResponse;
+import com.elsyah.tech.javara.response.common.ApiResponse;
 import com.elsyah.tech.javara.middleware.ratelimit.RateLimitExceededException;
 import com.elsyah.tech.javara.middleware.ratelimit.RateLimitUnavailableException;
 

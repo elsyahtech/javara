@@ -15,10 +15,10 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.MockMvc;
 
-import com.elsyah.tech.javara.entity.UserEntity;
-import com.elsyah.tech.javara.entity.UserRole;
-import com.elsyah.tech.javara.repository.UserRepository;
-import com.elsyah.tech.javara.service.AccessTokenService;
+import com.elsyah.tech.javara.entity.user.UserEntity;
+import com.elsyah.tech.javara.entity.user.UserRole;
+import com.elsyah.tech.javara.repository.user.UserRepository;
+import com.elsyah.tech.javara.service.auth.AccessTokenService;
 import com.elsyah.tech.javara.testsupport.PostgresRedisTestSupport;
 import com.elsyah.tech.javara.utils.security.PasswordHashService;
 
@@ -41,7 +41,7 @@ class SecurityAuthorizationIntegrationTests extends PostgresRedisTestSupport {
     @Autowired
     private PasswordHashService passwordHashService;
 
-    private String createdUserId;
+    private UUID createdUserId;
 
     @AfterEach
     void cleanUpTestUser() {
@@ -63,7 +63,7 @@ class SecurityAuthorizationIntegrationTests extends PostgresRedisTestSupport {
     // Verifies that an authenticated USER cannot list all accounts.
     @Test
     void ordinaryUserCannotListAllUsers() throws Exception {
-        String token = tokenFor("user-1");
+        String token = tokenFor(UUID.randomUUID());
 
         mockMvc.perform(get("/api/v1/users")
                         .header("Authorization", "Bearer " + token))
@@ -74,12 +74,12 @@ class SecurityAuthorizationIntegrationTests extends PostgresRedisTestSupport {
     @Test
     void adminCanListAllUsers() throws Exception {
         UserEntity admin = new UserEntity();
-        admin.setId("admin-1");
+        admin.setId(UUID.randomUUID());
         admin.setEmail("admin@example.com");
         admin.setRole(UserRole.ADMIN);
 
         UserEntity existingUser = new UserEntity();
-        createdUserId = UUID.randomUUID().toString();
+        createdUserId = UUID.randomUUID();
         existingUser.setId(createdUserId);
         existingUser.setEmail("authorization-" + createdUserId + "@example.com");
         existingUser.setPassword(passwordHashService.encode("unused-test-password"));
@@ -94,8 +94,8 @@ class SecurityAuthorizationIntegrationTests extends PostgresRedisTestSupport {
     // Verifies that a USER can access their own route but cannot access another user's route.
     @Test
     void ordinaryUserCanOnlyReadTheirOwnUserId() throws Exception {
-        String ownId = UUID.randomUUID().toString();
-        String otherId = UUID.randomUUID().toString();
+        UUID ownId = UUID.randomUUID();
+        UUID otherId = UUID.randomUUID();
         String token = tokenFor(ownId);
 
         mockMvc.perform(get("/api/v1/users/" + ownId)
@@ -121,7 +121,7 @@ class SecurityAuthorizationIntegrationTests extends PostgresRedisTestSupport {
                 .contains("Refresh token is invalid or expired"));
     }
 
-    private String tokenFor(String userId) {
+    private String tokenFor(UUID userId) {
         UserEntity user = new UserEntity();
         user.setId(userId);
         user.setEmail("user@example.com");

@@ -15,15 +15,25 @@ yaml_quote() {
     printf "'%s'" "$(printf '%s' "$1" | sed "s/'/''/g")"
 }
 
+validate_time_zone() {
+    [[ "$1" =~ ^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*$ ]] \
+            && { [[ -f "/usr/share/zoneinfo/$1" ]] \
+                || [[ -f "/var/db/timezone/zoneinfo/$1" ]]; } || {
+        printf '%s\n' "Enter a valid IANA timezone available on this system (for example UTC or Asia/Jakarta)." >&2
+        exit 1
+    }
+}
+
 configure_auth_bootstrap() {
     read -r -p "Initial administrator email: " bootstrap_admin_email
     read -r -s -p "Initial administrator password: " bootstrap_admin_password
     printf '\n' >&2
     read -r -s -p "Confirm initial administrator password: " password_confirmation
     printf '\n' >&2
-    read -r -p "Token transport (bearer/cookie) [bearer]: " token_transport
-    token_transport="${token_transport:-bearer}"
-
+    read -r -p "Token transport (cookie/bearer) [cookie]: " token_transport
+    token_transport="${token_transport:-cookie}"
+    read -r -p "Application timezone (IANA) [UTC]: " application_timezone
+    application_timezone="${application_timezone:-UTC}"
     if [[ ! "$bootstrap_admin_email" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]]; then
         printf '%s\n' "Initial administrator email is invalid." >&2
         exit 1
@@ -37,7 +47,7 @@ configure_auth_bootstrap() {
         printf '%s\n' "Token transport must be bearer or cookie." >&2
         exit 1
     fi
-
+    validate_time_zone "$application_timezone"
     if command -v openssl >/dev/null 2>&1; then
         signing_key="$(openssl rand -base64 32 | tr -d '\n')"
     else
@@ -269,7 +279,10 @@ write_managed_config() {
 server:
   address: 127.0.0.1
   port: 8080
-  forward-headers-strategy: none
+  request:
+    header:
+      forwarded:
+        strategy: none
   shutdown: graceful
   compression:
     enabled: false
@@ -301,6 +314,7 @@ spring:
       ddl-auto: none
     open-in-view: false
 app:
+  time-zone: $(yaml_quote "$application_timezone")
   web:
     cors:
       enabled: false

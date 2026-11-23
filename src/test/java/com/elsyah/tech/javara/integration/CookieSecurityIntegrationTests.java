@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import jakarta.servlet.http.Cookie;
 
 import java.util.UUID;
+import java.nio.charset.StandardCharsets;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,14 +17,20 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 
-import com.elsyah.tech.javara.entity.UserEntity;
-import com.elsyah.tech.javara.request.LoginRequest;
-import com.elsyah.tech.javara.service.AuthService;
-import com.elsyah.tech.javara.service.AccessTokenService;
+import tools.jackson.databind.ObjectMapper;
+
+import com.elsyah.tech.javara.entity.user.UserEntity;
+import com.elsyah.tech.javara.request.auth.LoginRequest;
+import com.elsyah.tech.javara.service.auth.AuthService;
+import com.elsyah.tech.javara.service.auth.AccessTokenService;
 import com.elsyah.tech.javara.testsupport.PostgresRedisTestSupport;
-import com.elsyah.tech.javara.repository.RefreshTokenRepository;
-import com.elsyah.tech.javara.repository.UserRepository;
+import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
+import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.utils.security.PasswordHashService;
 
 @SpringBootTest(properties = {
@@ -51,6 +58,12 @@ class CookieSecurityIntegrationTests extends PostgresRedisTestSupport {
 
     @Autowired
     private PasswordHashService passwordHashService;
+
+    @Autowired
+    private RegisteredClientRepository registeredClientRepository;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     // Verifies that cookie mode requires CSRF and accepts the issued CSRF cookie/header pair.
     @Test
@@ -89,12 +102,48 @@ class CookieSecurityIntegrationTests extends PostgresRedisTestSupport {
     @Test
     void accessCookieAuthenticatesProtectedRoutes() throws Exception {
         UserEntity user = new UserEntity();
-        user.setId("user-1");
+        user.setId(UUID.randomUUID());
         user.setEmail("user@example.com");
         String token = accessTokenService.issue(user);
 
         mockMvc.perform(get("/api/v1/users")
                         .cookie(new Cookie("ACCESS_TOKEN", token)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/v1/users")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void serviceBearerWorksInCookieModeWithoutAcceptingUserBearerTokens() throws Exception {
+        String clientId = "cookie-service-" + UUID.randomUUID();
+        String clientSecret = UUID.randomUUID().toString();
+        RegisteredClient client = RegisteredClient.withId(UUID.randomUUID().toString())
+                .clientId(clientId)
+                .clientSecret(passwordHashService.bcryptEncoder().encode(clientSecret))
+                .clientName("cookie-mode service")
+                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+                .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+                .scope("service.read")
+                .build();
+        registeredClientRepository.save(client);
+
+        String basic = java.util.Base64.getEncoder().encodeToString(
+                (clientId + ":" + clientSecret).getBytes(StandardCharsets.UTF_8));
+        MvcResult result = mockMvc.perform(post("/oauth2/token")
+                        .header("Authorization", "Basic " + basic)
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("grant_type", "client_credentials")
+                        .param("scope", "service.read"))
+                .andExpect(status().isOk())
+                .andReturn();
+        String token = objectMapper.readTree(result.getResponse().getContentAsString())
+                .path("access_token")
+                .asString();
+
+        mockMvc.perform(get("/api/v1/users")
+                        .header("Authorization", "Bearer " + token))
                 .andExpect(status().isForbidden());
     }
 
@@ -104,7 +153,7 @@ class CookieSecurityIntegrationTests extends PostgresRedisTestSupport {
         String email = UUID.randomUUID() + "@example.com";
         String password = "logout-test-password";
         UserEntity user = new UserEntity();
-        user.setId(UUID.randomUUID().toString());
+        user.setId(UUID.randomUUID());
         user.setEmail(email);
         user.setPassword(passwordHashService.encode(password));
         userRepository.saveAndFlush(user);

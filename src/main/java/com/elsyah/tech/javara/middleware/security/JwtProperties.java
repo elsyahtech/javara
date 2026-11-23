@@ -20,7 +20,7 @@ public record JwtProperties(
         String accessCookieName,
         String refreshCookieName) {
     public JwtProperties {
-        transport = transport == null ? TokenTransport.BEARER : transport;
+        transport = transport == null ? TokenTransport.COOKIE : transport;
         accessTokenTtl = accessTokenTtl == null ? Duration.ofMinutes(15) : accessTokenTtl;
         refreshTokenTtl = refreshTokenTtl == null ? Duration.ofDays(30) : refreshTokenTtl;
         cookieSecure = cookieSecure == null ? true : cookieSecure;

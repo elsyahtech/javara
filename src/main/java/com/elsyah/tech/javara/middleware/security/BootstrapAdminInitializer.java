@@ -6,7 +6,7 @@ import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
-import com.elsyah.tech.javara.service.BootstrapAdminService;
+import com.elsyah.tech.javara.service.user.BootstrapAdminService;
 
 @Component
 @ConditionalOnProperty(

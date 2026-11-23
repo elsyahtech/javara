@@ -39,7 +39,7 @@ import com.elsyah.tech.javara.testsupport.PostgresRedisTestSupport;
         "app.middleware.rate-limit.refresh.max-requests=1",
         "app.middleware.rate-limit.refresh.window=30s",
         "app.middleware.rate-limit.refresh.key-prefix=test:javara:refresh-rate-integration",
-        "server.forward-headers-strategy=framework"
+        "server.request.header.forwarded.strategy=framework"
 })
 class RedisRateLimitStoreIntegrationTests extends PostgresRedisTestSupport {
     @Autowired

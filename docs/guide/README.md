@@ -10,9 +10,13 @@ create temporary development services with Docker.
    API, and create the first administrator.
 2. [Configuration](configuration.md) — adjust credentials, token transport,
    CORS, rate limits, and proxy settings for your environment.
-3. [API and access rules](api-usage.md) — understand endpoints, permissions,
+3. [Database migrations and seed data](database-migrations-and-seeding.md) —
+   add schema changes and optional development examples safely.
+4. [Service-to-service authentication](service-authentication.md) — provision
+   OAuth client credentials, request service tokens, and authorize scopes.
+5. [API and access rules](api-usage.md) — understand endpoints, permissions,
    responses, and errors before connecting a client.
-4. [Production and business adoption](production-and-adoption.md) — check
+6. [Production and business adoption](production-and-adoption.md) — check
    whether the current feature set fits your use case and what must be added
    before production.
 

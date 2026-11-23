@@ -38,6 +38,15 @@ validate_database_name() {
     }
 }
 
+validate_time_zone() {
+    [[ "$1" =~ ^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*$ ]] \
+            && { [[ -f "/usr/share/zoneinfo/$1" ]] \
+                || [[ -f "/var/db/timezone/zoneinfo/$1" ]]; } || {
+        printf '%s\n' "Enter a valid IANA timezone available on this system (for example UTC or Asia/Jakarta)." >&2
+        exit 1
+    }
+}
+
 validate_admin_credentials() {
     [[ "$1" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] || {
         printf '%s\n' "Initial administrator email is invalid." >&2
@@ -77,12 +86,14 @@ redis_password="$(read_secret 'Redis password (blank if unused)')"
 bootstrap_admin_email="$(read_value 'Initial administrator email' '')"
 bootstrap_admin_password="$(read_secret 'Initial administrator password')"
 bootstrap_admin_password_confirm="$(read_secret 'Confirm initial administrator password')"
-token_transport="$(read_value 'Token transport (bearer/cookie)' 'bearer')"
+token_transport="$(read_value 'Token transport (cookie/bearer)' 'cookie')"
+application_timezone="$(read_value 'Application timezone (IANA)' 'UTC')"
 signing_key="$(generate_signing_key)"
 
 validate_host "$postgres_host"
 validate_port "$postgres_port"
 validate_database_name "$postgres_db"
+validate_time_zone "$application_timezone"
 validate_host "$redis_host"
 validate_port "$redis_port"
 validate_admin_credentials \
@@ -121,7 +132,10 @@ cat > "$temp_file" <<EOF
 server:
   address: 127.0.0.1
   port: 8080
-  forward-headers-strategy: none
+  request:
+    header:
+      forwarded:
+        strategy: none
   shutdown: graceful
   compression:
     enabled: false
@@ -154,6 +168,7 @@ spring:
       ddl-auto: none
     open-in-view: false
 app:
+  time-zone: $(yaml_quote "$application_timezone")
   web:
     cors:
       enabled: false

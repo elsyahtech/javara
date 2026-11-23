@@ -17,9 +17,12 @@ import org.springframework.security.oauth2.server.resource.web.BearerTokenResolv
 import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 
 import com.elsyah.tech.javara.middleware.cors.CorsProperties;
 
@@ -35,12 +38,14 @@ public class ApiSecurityConfiguration {
             "/api/v1/auth/csrf");
 
     @Bean
+    @Order(2)
     public SecurityFilterChain apiSecurityFilterChain(
             HttpSecurity http,
             SecurityHeadersProperties securityHeaders,
             JwtProperties jwtProperties,
             CorsProperties corsProperties,
             CookieCsrfTokenRepository csrfTokenRepository,
+            JwtDecoder jwtDecoder,
             ApiAuthenticationEntryPoint authenticationEntryPoint,
             ApiAccessDeniedHandler accessDeniedHandler) throws Exception {
         if (jwtProperties.transport() == TokenTransport.COOKIE
@@ -85,7 +90,7 @@ public class ApiSecurityConfiguration {
                         .authenticationEntryPoint(authenticationEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler))
                 .oauth2ResourceServer(oauth2 -> oauth2
-                        .bearerTokenResolver(bearerTokenResolver(jwtProperties))
+                        .bearerTokenResolver(bearerTokenResolver(jwtProperties, jwtDecoder))
                         .authenticationEntryPoint(authenticationEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler)
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
@@ -112,10 +117,13 @@ public class ApiSecurityConfiguration {
         return repository;
     }
 
-    private static BearerTokenResolver bearerTokenResolver(JwtProperties properties) {
+    private static BearerTokenResolver bearerTokenResolver(
+            JwtProperties properties,
+            JwtDecoder jwtDecoder) {
         BearerTokenResolver delegate;
         if (properties.transport() == TokenTransport.COOKIE) {
-            delegate = new CookieBearerTokenResolver(properties.accessCookieName());
+            delegate = new CookieOrServiceBearerTokenResolver(
+                    properties.accessCookieName(), jwtDecoder);
         } else {
             delegate = new DefaultBearerTokenResolver();
         }
@@ -132,11 +140,24 @@ public class ApiSecurityConfiguration {
                 : path.substring(contextPath.length());
     }
 
-    private static JwtAuthenticationConverter jwtAuthenticationConverter() {
+    @Bean
+    public JwtAuthenticationConverter jwtAuthenticationConverter() {
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
-        converter.setJwtGrantedAuthoritiesConverter(jwt -> jwt.getClaimAsStringList("roles").stream()
-                .<GrantedAuthority>map(role -> new SimpleGrantedAuthority("ROLE_" + role))
-                .toList());
+        JwtGrantedAuthoritiesConverter scopeAuthorities = new JwtGrantedAuthoritiesConverter();
+        converter.setJwtGrantedAuthoritiesConverter(jwt -> {
+            var authorities = new java.util.ArrayList<GrantedAuthority>();
+            if ("service".equals(jwt.getClaimAsString("principal_type"))) {
+                authorities.addAll(scopeAuthorities.convert(jwt));
+            } else {
+                var roles = jwt.getClaimAsStringList("roles");
+                if (roles != null) {
+                    roles.stream()
+                            .<GrantedAuthority>map(role -> new SimpleGrantedAuthority("ROLE_" + role))
+                            .forEach(authorities::add);
+                }
+            }
+            return authorities;
+        });
         return converter;
     }
 }

@@ -15,6 +15,8 @@ configured, and operated.
 - [Guide index](guide/README.md)
 - [Getting started](guide/getting-started.md)
 - [Configuration](guide/configuration.md)
+- [Database migrations and seed data](guide/database-migrations-and-seeding.md)
+- [Service-to-service authentication](guide/service-authentication.md)
 - [API and access rules](guide/api-usage.md)
 - [Production and business adoption](guide/production-and-adoption.md)
 

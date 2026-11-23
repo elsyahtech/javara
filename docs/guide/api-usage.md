@@ -34,10 +34,8 @@ For browser cookies and CSRF, see the
 | `POST /api/v1/auth/refresh` | Public | Rotates a refresh token |
 | `POST /api/v1/auth/logout` | Current refresh token | Revokes that session; cookie mode also requires a CSRF token |
 | `GET /api/v1/auth/csrf` | Public in cookie mode | Gets a CSRF token; not found in Bearer mode |
-| `GET /api/v1/users` | ADMIN | Lists users |
+| `GET /api/v1/users?page=0&size=20` | ADMIN | Returns a user page with total count |
 | `POST /api/v1/users` | ADMIN | Creates a USER |
-| `GET /api/v1/users/findAllWithSelectedColumn` | ADMIN | Lists selected user fields |
-| `GET /api/v1/users/findAllWithLimitAndOffset` | ADMIN | Lists selected fields with pagination |
 | `GET /api/v1/users/{id}` | Same USER or ADMIN | Gets a user |
 | `GET /api/v1/users/findUserByIdWithSelectedColumns/{id}` | Same USER or ADMIN | Gets selected fields |
 | `PUT /api/v1/users/{id}` | Same USER or ADMIN | Replaces the mutable fields in the request |
@@ -65,21 +63,50 @@ request; it is not a partial-update endpoint.
 
 Responses use an envelope. Successful responses contain fields such as
 `httpCode`, `message`, `success`, and `data`. Errors contain `httpCode`,
-`success`, and `error`. Do not assume every successful lookup returns a
-non-empty list: list operations can return `404 Not Found` when no users
-exist.
+`success`, and `error`. The users collection returns `200 OK` with an empty
+`data` array and `totalElements: 0` when no users exist.
 
 ## Pagination
 
-`GET /api/v1/users/findAllWithLimitAndOffset` accepts:
+`GET /api/v1/users` returns a page containing only the selected public user
+fields. It accepts:
 
 - `page`: zero-based page index, default `0`
 - `size`: page size, default `20`, allowed range `1`–`100`
-- `sort`: optional Spring Data sort expression
+- Results use `createdAt` descending and `id` ascending as a stable order.
 
 Requests with a size outside `1`–`100` return `400 Bad Request`. Results use
-a stable ID tie-breaker so adjacent pages are less likely to repeat or skip
-records when sort values match.
+a stable order so adjacent pages are less likely to repeat or skip records
+when creation timestamps match. The response includes `page`, `size`,
+`totalElements`, `totalPages`, `hasNext`, and `hasPrevious` alongside `data`.
+An out-of-range page is still a successful empty page.
+
+Example response:
+
+```json
+{
+  "httpCode": 200,
+  "message": "Users retrieved successfully",
+  "success": true,
+  "data": [
+    {
+      "id": "0c472662-aeac-4f82-b7e1-703f94c79641",
+      "email": "person@example.com",
+      "isActive": true,
+      "createdAt": "2026-11-23T12:00:00",
+      "updatedAt": null,
+      "deletedAt": null
+    }
+  ],
+  "count": 1,
+  "page": 0,
+  "size": 20,
+  "totalElements": 1,
+  "totalPages": 1,
+  "hasNext": false,
+  "hasPrevious": false
+}
+```
 
 ## Common status codes
 
@@ -90,7 +117,7 @@ records when sort values match.
 | `400` | Invalid request, validation error, or unsupported page size |
 | `401` | Missing/invalid authentication or invalid credentials |
 | `403` | Authenticated but not allowed to perform this action |
-| `404` | User/resource not found, or a list is empty |
+| `404` | Requested user/resource not found |
 | `409` | Duplicate active email or concurrent update conflict |
 | `429` | Endpoint rate limit reached; check `Retry-After` |
 | `503` | Redis rate-limit service is unavailable |

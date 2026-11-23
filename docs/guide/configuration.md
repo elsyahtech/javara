@@ -11,8 +11,21 @@ example:
 ```text
 APP_SECURITY_JWT_TRANSPORT=BEARER
 APP_MIDDLEWARE_RATE_LIMIT_REGISTER_MAX_REQUESTS=5
+APP_TIME_ZONE=Asia/Jakarta
 SPRING_DATA_REDIS_HOST=localhost
 ```
+
+## Application timezone
+
+Set `app.time-zone` to a Java/IANA timezone ID, for example
+`Asia/Jakarta`. It defaults to `UTC`; `make setup` and `make install` ask for
+the timezone and write it into `config/application.yml`. You can also set
+`APP_TIME_ZONE` in the environment.
+
+JAVARA uses this zone on its injected `Clock` for local-calendar calculations.
+Timestamps, JWT issue/expiry times, and database `Instant` values remain
+absolute instants and are not shifted by this setting. Format timestamps in
+the user's timezone at the client when they are user-specific.
 
 ## Database and Redis
 
@@ -46,11 +59,12 @@ Bootstrap does not promote a USER account to ADMIN.
 
 JAVARA supports two token transports:
 
-- `BEARER` (default): login returns access and refresh tokens in the response.
+- `COOKIE` (default): login returns HttpOnly cookies for access and refresh.
+  The browser adapter handles CSRF, refresh, and one retry after an expired
+  access token.
+- `BEARER`: login returns access and refresh tokens in the response.
   The client sends the access token using
   `Authorization: Bearer <access-token>`.
-- `COOKIE`: the API places tokens in HttpOnly cookies. Browser requests that
-  change data must also send a CSRF token.
 
 Select the transport with:
 
@@ -58,7 +72,7 @@ Select the transport with:
 app:
   security:
     jwt:
-      transport: BEARER
+      transport: COOKIE
       signing-key: "<use-a-unique-secret-from-your-secret-manager>"
       access-token-ttl: 15m
       refresh-token-ttl: 30d
@@ -74,6 +88,11 @@ openssl rand -base64 32
 ```
 
 Never commit signing keys or passwords.
+
+The browser adapter is one optional client module under `sdk/browser`; it does
+not change the HTTP API contract for native or service clients. Service-to-
+service authentication is a separate OAuth 2.0 Client Credentials flow and
+does not use user refresh tokens.
 
 Refresh tokens rotate on refresh. The client must replace the old refresh
 token with the newly returned one. Password changes revoke active refresh
@@ -107,17 +126,29 @@ app:
 
 The counters use the client IP and a fixed time window. Use distinct key
 prefixes for environments sharing Redis. Exceeded limits return `429` with a
-`Retry-After` header. If Redis is unavailable, the limited request returns
-`503`; JAVARA does not silently bypass the limit.
+`Retry-After` header. Redis is required at startup even if all auth limiters
+are disabled. JAVARA checks Redis connectivity before accepting requests and,
+when any auth limiter is enabled, also runs a rate-limit operation against
+Redis. If Redis becomes unavailable after startup, a limited request returns
+`503`; JAVARA does not silently bypass the limit. Redis connection and
+command timeouts should be bounded; the generated setup uses two-second
+timeouts.
 
 ## Reverse proxies and client IPs
+
+On Spring Boot 4.2, configure forwarded headers with
+`server.request.header.forwarded.strategy`. The older
+`server.forward-headers-strategy` property is deprecated.
 
 The generated local configuration binds the API to loopback and does not
 trust forwarded headers:
 
 ```yaml
 server:
-  forward-headers-strategy: none
+  request:
+    header:
+      forwarded:
+        strategy: none
 ```
 
 With `none`, rate limits use the address of the direct network peer. This is
@@ -130,13 +161,16 @@ a trusted reverse proxy or load balancer:
 
 ```yaml
 server:
-  forward-headers-strategy: framework
+  request:
+    header:
+      forwarded:
+        strategy: framework
 ```
 
 Equivalent environment variable:
 
 ```text
-SERVER_FORWARD_HEADERS_STRATEGY=framework
+SERVER_REQUEST_HEADER_FORWARDED_STRATEGY=framework
 ```
 
 `framework` makes Spring honor forwarded headers; it does not verify which
@@ -206,6 +240,16 @@ complete request flow.
 
 ## Migrations
 
-Flyway applies files from `src/main/resources/db/migration` at startup. Never
-edit a migration that has already been applied to a shared database; add a
-new migration instead. Back up important data before deploying a migration.
+Flyway applies versioned files from `src/main/resources/db/migration` at
+startup. Optional sample migrations and seed data belong outside that
+directory so they do not run automatically. See
+[Database migrations and development seed data](database-migrations-and-seeding.md)
+for file naming, a complete example, and safe local instructions. Never edit
+a migration that has already been applied to a shared database; add a new
+migration instead. Back up important data before deploying a migration.
+
+The initial schema defines user IDs as PostgreSQL `UUID` and timestamps as
+`TIMESTAMPTZ` directly in V1 and V2. These migrations are intended for a fresh
+database. They do not convert an existing schema; do not point an existing
+database at this version without deliberately reconciling its schema and
+Flyway history first.

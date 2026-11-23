@@ -23,7 +23,7 @@ import com.elsyah.tech.javara.testsupport.PostgresRedisTestSupport;
         "app.middleware.rate-limit.login.max-requests=1",
         "app.middleware.rate-limit.login.window=30s",
         "app.middleware.rate-limit.login.key-prefix=test:javara:direct-exposure:login",
-        "server.forward-headers-strategy=none"
+        "server.request.header.forwarded.strategy=none"
 })
 @AutoConfigureMockMvc
 class ForwardedHeaderDirectExposureIntegrationTests extends PostgresRedisTestSupport {

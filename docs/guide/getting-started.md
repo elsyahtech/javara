@@ -61,9 +61,10 @@ If PostgreSQL and Redis are already available, run:
 make setup
 ```
 
-The setup asks for the connection details, initial ADMIN account, and token
-transport. It generates a JWT signing key, checks whether the service ports
-are reachable when `nc` is installed, and writes `config/application.yml`.
+The setup asks for the connection details, initial ADMIN account, token
+transport, and application timezone (IANA; default `UTC`). It generates a JWT
+signing key, checks whether the service ports are reachable when `nc` is
+installed, and writes `config/application.yml`.
 The application verifies the actual database and Redis credentials when it
 starts.
 
@@ -116,6 +117,41 @@ Never point tests at a database containing data you need.
 | `make db-up` | Start the local Docker Compose services |
 | `make db-down` | Stop services and keep their data |
 | `make db-reset` | Delete local database data after explicit confirmation |
+| `make backup-setup` | Configure optional scheduled database backups and expired-token cleanup |
+| `make backup-run` | Run one backup and cleanup immediately |
+| `make backup-disable` | Disable JAVARA's managed cron job without deleting backup files |
+
+## Optional database backups
+
+Backups are an infrastructure task outside the JAVARA runtime. Run
+`make backup-setup` and answer the prompts to choose the PostgreSQL connection,
+dump format (`custom` or `plain`), destination (encrypted filesystem, S3, or
+both), schedule, backup retention, and expired-token grace period. For S3,
+configure AWS credentials separately using an AWS profile or the standard AWS
+credential chain. Enter the same database used by the running JAVARA instance:
+cleanup runs against the database selected here. The setup checks the database
+schema and destination before installing the scheduler. Connection settings
+are stored in the Git-ignored `config/backup.env` with file mode `600`.
+
+The default scheduler is the current operating system user's cron. The schedule
+uses the host's timezone. Choose `external` if your deployment manages jobs
+elsewhere, then register this command with that scheduler:
+
+```bash
+/bin/bash /path/to/javara/scripts/backup-run.sh --scheduled
+```
+
+`make backup-run` performs the same operation once. A backup is verified at
+every selected destination before expired refresh tokens are deleted; a failed
+dump or publish skips cleanup. The configured grace period retains expired
+tokens temporarily for replay detection.
+
+The backup is a `pg_dump` of the JAVARA database, not PostgreSQL cluster-wide
+roles or server settings. Custom dumps can be restored with `pg_restore`;
+plain SQL dumps can be restored with `psql`. Test restores regularly and
+protect database dumps as sensitive data. `make backup-disable` removes only
+the cron job managed by JAVARA; it leaves the config and existing backups in
+place. Disable externally managed jobs in their own scheduler.
 
 If startup fails, check the message first. A missing signing key or stale local
 configuration can usually be fixed by reviewing `config/application.yml` or

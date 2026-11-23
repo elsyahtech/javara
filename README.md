@@ -16,6 +16,7 @@ The repository also plans to maintain separate implementations for MySQL, SQL Se
 - [Quick Start](#quick-start)
 - [Database Configuration](#database-configuration)
 - [Flyway Migrations](#flyway-migrations)
+- [Database Migrations and Seed Data Guide](docs/guide/database-migrations-and-seeding.md)
 - [Running the Application](#running-the-application)
 - [API Reference](#api-reference)
 - [Authentication and Authorization](#authentication-and-authorization)
@@ -76,7 +77,7 @@ Supported operations include:
 ### Implemented
 
 - PostgreSQL JPA repository
-- UUID-style string user IDs
+- Native PostgreSQL UUID user IDs (serialized as strings in JSON/JWT)
 - Create and update validation
 - Soft delete through `deleted_at`
 - Active-user email uniqueness
@@ -117,24 +118,54 @@ src/
 ├── main/
 │   ├── java/com/elsyah/tech/javara/
 │   │   ├── controller/
+│   │   │   ├── auth/
+│   │   │   ├── user/
+│   │   │   └── welcome/
 │   │   ├── entity/
+│   │   │   ├── auth/
+│   │   │   └── user/
 │   │   ├── exception/
 │   │   ├── projection/
+│   │   │   └── user/
 │   │   ├── repository/
+│   │   │   ├── auth/
+│   │   │   ├── user/
+│   │   │   └── welcome/
 │   │   ├── request/
+│   │   │   ├── auth/
+│   │   │   └── user/
 │   │   ├── response/
+│   │   │   ├── auth/
+│   │   │   ├── common/
+│   │   │   ├── user/
+│   │   │   └── welcome/
 │   │   ├── service/
+│   │   │   ├── auth/
+│   │   │   ├── common/
+│   │   │   ├── user/
+│   │   │   └── welcome/
 │   │   └── utils/
 │   │       └── security/
 │   └── resources/
 │       └── db/migration/
 └── test/
     └── java/com/elsyah/tech/javara/
-        ├── test/unit/
-        └── test/integration/
+        ├── unit/
+        │   ├── auth/
+        │   ├── common/
+        │   ├── middleware/
+        │   ├── user/
+        │   └── welcome/
+        └── integration/
 ```
 
-Unit tests are organized below `test.unit`. Concurrent integration tests are organized below `test.integration`.
+Application classes and unit tests are organized by layer and then domain.
+Auth, user, and welcome requests, responses, entities, projections, controllers,
+services, repositories, and their unit tests live under their matching domain
+packages. Shared response/service types use `response.common` and
+`service.common`; cross-cutting infrastructure tests remain in
+`unit.middleware`. Add a new domain package at each relevant layer and place
+its unit tests under the matching `unit/<domain>` package.
 
 ## Requirements
 
@@ -164,7 +195,7 @@ If PostgreSQL and Redis are already available, configure them instead of install
 make setup
 ```
 
-The setup first offers to install JDK 25 if needed, then asks for service connection details, initial ADMIN email/password, and the token transport. It generates an HS256 signing key, checks TCP reachability when `nc` is available, then saves the runtime configuration in `config/application.yml` with restricted file permissions. This local file is excluded from Git. `make run` loads this file as the application's configuration.
+The setup first offers to install JDK 25 if needed, then asks for service connection details, initial ADMIN email/password, token transport, and an application timezone (IANA; default `UTC`). It generates an HS256 signing key, checks TCP reachability when `nc` is available, then saves the runtime configuration in `config/application.yml` with restricted file permissions. This local file is excluded from Git. `make run` loads this file as the application's configuration.
 
 The setup check confirms that the host and port are reachable; the application verifies database and Redis credentials when it starts.
 
@@ -240,19 +271,31 @@ src/main/resources/db/migration
 |---|---|
 | `V1__create_user.sql` | Creates the `users` table and indexes, including active-user email uniqueness and optimistic locking |
 | `V2__create_refresh_tokens.sql` | Creates hashed refresh-token storage |
-| `V3__seed_user.sql` | Historical migration that inserts an example user |
-| `V4__remove_demo_user.sql` | Removes the historical demo account and its refresh tokens |
 
-Fresh databases run all migrations in order and do not retain a demo account.
-Do not modify migration files that have already been applied. Add a new
-migration whenever the database schema changes.
+JAVARA migrations do not insert demo users or other example business data.
+Flyway applies versioned files in this directory at application startup.
+Never edit a migration that has already been applied to a shared database;
+add a new migration instead.
+
+For naming rules, a complete products-table migration and seed example, and
+instructions for running sample data only in development, see the
+[Database Migrations and Seed Data Guide](docs/guide/database-migrations-and-seeding.md).
 
 Check migration history:
 
 ```bash
-docker exec postgres-db psql -U javara_app -d javara_db \
-  -c "SELECT version, description, success FROM flyway_schema_history ORDER BY installed_rank;"
+make psql
 ```
+
+Then run:
+
+```sql
+SELECT version, description, success
+FROM flyway_schema_history
+ORDER BY installed_rank;
+```
+
+Exit the prompt with `\q`.
 
 ## Running the Application
 
@@ -373,11 +416,11 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
   -d '{"email":"user@example.com","password":"password123"}'
 ```
 
-In Bearer mode (the default), a successful login returns an access JWT and refresh token in the response. Send the access JWT as `Authorization: Bearer <accessToken>` for protected endpoints. Refresh with `POST /api/v1/auth/refresh` and `{"refreshToken":"..."}`; each successful refresh rotates the opaque refresh token. Logout at `POST /api/v1/auth/logout` requires only the current refresh token in the same JSON shape; the access token is not required.
+Cookie mode is the default. A successful login sets the access and refresh tokens in HttpOnly cookies; the browser SDK sends cookies, refreshes after a protected request returns `401`, and retries that request once. The SDK never reads either token. See [`sdk/browser`](sdk/browser) for the browser adapter. Other runtimes can use the same HTTP contract and select Bearer transport with `app.security.jwt.transport: BEARER`.
 
 Access tokens expire after 15 minutes by default. Refresh tokens expire after 30 days, are stored in PostgreSQL only as SHA-256 hashes, and are revoked on rotation or logout. Reuse of a revoked refresh token revokes the user's other active refresh tokens. Changing a user's password revokes all of that user's active refresh tokens; already-issued access JWTs remain valid until their short expiry.
 
-Set `app.security.jwt.transport: COOKIE` to store tokens in HttpOnly cookies instead. The access cookie is sent to API routes; the refresh cookie is scoped to `/api/v1/auth`. Cookie mode enables CSRF protection: first call `GET /api/v1/auth/csrf`, then send its token in `X-XSRF-TOKEN` for POST/PUT/PATCH/DELETE requests. Logout works with the refresh cookie even after the access cookie expires. Cookies are Secure by default; cross-site deployments must configure `SameSite: None`, HTTPS, CORS credentials, and explicit allowed origins.
+The access cookie is sent to API routes; the refresh cookie is scoped to `/api/v1/auth`. Cookie mode enables CSRF protection: the SDK obtains the token from `GET /api/v1/auth/csrf` and sends it in `X-XSRF-TOKEN` for POST/PUT/PATCH/DELETE requests. Logout works with the refresh cookie even after the access cookie expires. Cookies are Secure by default; cross-site deployments must configure `SameSite: None`, HTTPS, CORS credentials, and explicit allowed origins.
 
 `/` and `/api/v1/auth/register`, `/api/v1/auth/login`, and `/api/v1/auth/refresh` are public. All `/api/v1/users/**` routes require authentication. USER accounts can access their own ID-based user routes; list and create operations, and all other-user management, require ADMIN.
 
@@ -385,49 +428,23 @@ The initial ADMIN is created from `app.security.bootstrap-admin.email` and `.pas
 
 Invalid credentials and inactive accounts return the same `401 Unauthorized` message. If a stored password uses an older supported format, it is upgraded to the configured algorithm after successful login.
 
-Too many login requests from one client IP return `429 Too Many Requests` with a `Retry-After` header. If Redis is unavailable, login requests fail closed with `503 Service Unavailable`.
+Too many login requests from one client IP return `429 Too Many Requests` with a `Retry-After` header. Redis is required at startup even when all authentication limiters are disabled. JAVARA verifies Redis connectivity before accepting requests and also verifies the rate-limit operation when a limiter is enabled. If Redis becomes unavailable later, limited requests fail closed with `503 Service Unavailable`.
 
 ### Find All Users
 
 ```http
-GET /api/v1/users
+GET /api/v1/users?page=0&size=20
 ```
 
 ```bash
-curl http://localhost:8080/api/v1/users
+curl "http://localhost:8080/api/v1/users?page=0&size=20"
 ```
 
-Success status: `200 OK`
-
-Empty result: `404 Not Found`
-
-### Find All Users with Selected Columns
-
-```http
-GET /api/v1/users/findAllWithSelectedColumn
-```
-
-```bash
-curl http://localhost:8080/api/v1/users/findAllWithSelectedColumn
-```
-
-### Find All Users with Pagination
-
-```http
-GET /api/v1/users/findAllWithLimitAndOffset?page=0&size=10
-```
-
-```bash
-curl "http://localhost:8080/api/v1/users/findAllWithLimitAndOffset?page=0&size=10"
-```
-
-The Spring `Pageable` parameters are:
-
-- `page`: zero-based page number
-- `size`: number of records per page
-- `sort`: optional sort expression; results are stabilized by a unique ID tie-breaker
-
-The default page size is 20 and the maximum is 100. Requests outside the range 1–100 return `400 Bad Request`.
+The endpoint returns selected public user fields and page metadata, including
+`totalElements` and `totalPages`. `page` is zero-based (default `0`); `size`
+defaults to `20` and must be between `1` and `100`. Results are sorted by
+creation time descending with the user ID as a stable tie-breaker. An empty
+collection or out-of-range page returns `200 OK` with an empty `data` array.
 
 ### Find User by ID
 
@@ -652,7 +669,7 @@ app:
 
 Each endpoint accepts `enabled`, `max-requests`, `window`, and `key-prefix`. Spring environment variable equivalents use the `APP_MIDDLEWARE_RATE_LIMIT_<LOGIN|REGISTER|REFRESH>_` prefix, for example `APP_MIDDLEWARE_RATE_LIMIT_REGISTER_MAX_REQUESTS`. Use distinct key prefixes for environments sharing a Redis server. Redis connection settings use Spring Boot's `SPRING_DATA_REDIS_HOST`, `SPRING_DATA_REDIS_PORT`, `SPRING_DATA_REDIS_USERNAME`, and `SPRING_DATA_REDIS_PASSWORD` properties.
 
-The counter increment and expiration are performed atomically in Redis. The generated configuration uses `server.forward-headers-strategy: none`, so limits use the direct network peer and client-supplied forwarding headers are ignored. Set it to `framework` only when the application is reachable exclusively through a trusted reverse proxy/load balancer that removes incoming forwarding headers and writes canonical ones. Spring does not validate the proxy identity itself; keep the application port private. The setup scripts bind the local app to loopback. See the [proxy configuration guide](docs/guide/configuration.md#reverse-proxies-and-client-ips) for Nginx and Traefik examples. Exceeded limits return `429` with `Retry-After`; Redis failure rejects the affected request with `503` rather than bypassing the limiter.
+The counter increment and expiration are performed atomically in Redis. Redis is a required application dependency: startup verifies it is reachable before the application accepts requests, regardless of whether authentication limiters are enabled. When a limiter is enabled, startup also verifies the rate-limit operation. If Redis becomes unavailable after startup, affected requests return `503` rather than bypassing the limiter. The generated configuration uses `server.request.header.forwarded.strategy: none`, so limits use the direct network peer and client-supplied forwarding headers are ignored. Set it to `framework` only when the application is reachable exclusively through a trusted reverse proxy/load balancer that removes incoming forwarding headers and writes canonical ones. Spring does not validate the proxy identity itself; keep the application port private. The setup scripts bind the local app to loopback. See the [proxy configuration guide](docs/guide/configuration.md#reverse-proxies-and-client-ips) for Nginx and Traefik examples. Exceeded limits return `429` with `Retry-After`.
 
 ## Concurrency and Data Safety
 
@@ -814,7 +831,7 @@ registration policy.
 
 - Access JWTs are not revoked immediately by logout; they remain valid until their configured expiry.
 - Authentication rate limiting uses fixed windows keyed by the proxy-resolved client IP.
-- The application returns `503` for limited authentication requests if Redis is unavailable.
+- The application returns `503` for limited authentication requests if Redis becomes unavailable after startup; Redis is required at startup in every configuration.
 - Create ignores `request.isActive()` and always creates an active user.
 - Concurrent HTTP behavior should also be tested through MockMvc or a running HTTP server.
 - Lock timeout and deadlock retry behavior are not yet standardized.

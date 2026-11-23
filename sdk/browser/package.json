@@ -1,0 +1,9 @@
+{
+  "name": "@javara/browser-auth",
+  "private": true,
+  "type": "module",
+  "exports": "./src/auth-client.js",
+  "scripts": {
+    "test": "node --test"
+  }
+}

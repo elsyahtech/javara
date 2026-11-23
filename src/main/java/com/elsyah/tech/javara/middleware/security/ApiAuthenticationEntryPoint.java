@@ -13,7 +13,7 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
-import com.elsyah.tech.javara.response.ApiResponse;
+import com.elsyah.tech.javara.response.common.ApiResponse;
 
 @Component
 public class ApiAuthenticationEntryPoint implements AuthenticationEntryPoint {

@@ -49,11 +49,17 @@ add and test that control before exposing the service.
 ### Network and browser security
 
 - Serve traffic over HTTPS.
-- Keep `server.forward-headers-strategy: none` for direct connections. Set it
-  to `framework` only behind a trusted proxy that overwrites client-supplied
-  forwarding headers, and block public access to the application port.
+- Keep `server.request.header.forwarded.strategy: none` for direct
+  connections. Set it to `framework` only behind a trusted proxy that
+  overwrites client-supplied forwarding headers, and block public access to
+  the application port.
 - Test that changing `X-Forwarded-For` cannot bypass rate limits at the edge
   proxy, not only in application-level tests.
+- Keep Redis available before starting JAVARA. It is a required service even
+  when authentication rate limiting is disabled; startup fails before the
+  application begins accepting requests if Redis is unavailable. When an
+  authentication rate limit is enabled, startup also verifies the Redis
+  rate-limit operation.
 - Restrict CORS to known origins. Do not use wildcard origins with cookies.
 - Use cookie transport and CSRF protection where appropriate for browser
   clients; test `SameSite`, `Secure`, and domain settings in the real

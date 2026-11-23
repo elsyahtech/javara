@@ -1,4 +1,4 @@
-.PHONY: install setup run test build db-up db-down db-reset psql
+.PHONY: install setup run test build db-up db-down db-reset psql backup-setup backup-run backup-disable
 
 install:
 	bash scripts/install.sh
@@ -27,3 +27,12 @@ db-reset:
 
 psql:
 	bash scripts/docker-compose.sh exec postgres sh -c 'exec psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
+
+backup-setup:
+	bash scripts/backup-setup.sh
+
+backup-run:
+	bash scripts/backup-run.sh
+
+backup-disable:
+	bash scripts/backup-disable.sh
