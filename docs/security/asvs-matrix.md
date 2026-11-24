@@ -6,7 +6,7 @@
 |---|---|
 | Standard | OWASP Application Security Verification Standard (ASVS) v5.0.0 |
 | Requested target | Level 3 |
-| Assessment status | Not assessed |
+| Assessment status | Not assessed; see [assessment record](assessment/README.md) |
 | Assessor and assessment date | To be completed |
 | Intended use | Reusable JAVARA baseline for banking, finance/fintech, energy, and startup solutions |
 | Product objective | Modular, configurable, secure foundation for multi-company solutions; not yet assessed |
