@@ -18,6 +18,7 @@ import com.elsyah.tech.javara.middleware.ratelimit.AuthRateLimiter;
 import com.elsyah.tech.javara.middleware.ratelimit.LoginRateLimitProperties;
 import com.elsyah.tech.javara.middleware.ratelimit.RefreshRateLimitProperties;
 import com.elsyah.tech.javara.middleware.ratelimit.RegisterRateLimitProperties;
+import com.elsyah.tech.javara.middleware.ratelimit.SessionReauthRateLimitProperties;
 
 class AuthRateLimitWebMvcConfigurationTests {
     @Test
@@ -35,7 +36,10 @@ class AuthRateLimitWebMvcConfigurationTests {
                 new String[] {
                         "/api/v1/auth/login",
                         "/api/v1/auth/register",
-                        "/api/v1/auth/refresh"
+                        "/api/v1/auth/refresh",
+                        "/api/v1/auth/sessions/*/terminate",
+                        "/api/v1/auth/sessions/terminate-all",
+                        "/api/v1/admin/users/*/sessions/terminate"
                 },
                 mapped.getIncludePathPatterns());
     }
@@ -45,7 +49,7 @@ class AuthRateLimitWebMvcConfigurationTests {
         AuthRateLimitInterceptor interceptor = interceptor();
         CapturingInterceptorRegistry registry = new CapturingInterceptorRegistry();
 
-        configuration(interceptor, false, true, false).addInterceptors(registry);
+        configuration(interceptor, false, true, false, false).addInterceptors(registry);
 
         List<Object> registered = registry.registeredInterceptors();
         assertEquals(1, registered.size());
@@ -59,7 +63,7 @@ class AuthRateLimitWebMvcConfigurationTests {
     void doesNotRegisterInterceptorWhenAllEndpointsAreDisabled() {
         CapturingInterceptorRegistry registry = new CapturingInterceptorRegistry();
 
-        configuration(interceptor(), false, false, false).addInterceptors(registry);
+        configuration(interceptor(), false, false, false, false).addInterceptors(registry);
 
         assertEquals(List.of(), registry.registeredInterceptors());
     }
@@ -69,7 +73,9 @@ class AuthRateLimitWebMvcConfigurationTests {
                 mock(AuthRateLimiter.class),
                 new LoginRateLimitProperties(10, Duration.ofMinutes(1), "test:login", true),
                 new RegisterRateLimitProperties(5, Duration.ofHours(1), "test:register", true),
-                new RefreshRateLimitProperties(30, Duration.ofMinutes(1), "test:refresh", true));
+                new RefreshRateLimitProperties(30, Duration.ofMinutes(1), "test:refresh", true),
+                new SessionReauthRateLimitProperties(
+                        5, Duration.ofMinutes(15), "test:session-reauth", true));
     }
 
     private static AuthRateLimitWebMvcConfiguration configuration(
@@ -77,13 +83,32 @@ class AuthRateLimitWebMvcConfigurationTests {
             boolean loginEnabled,
             boolean registerEnabled,
             boolean refreshEnabled) {
+        return configuration(
+                interceptor,
+                loginEnabled,
+                registerEnabled,
+                refreshEnabled,
+                true);
+    }
+
+    private static AuthRateLimitWebMvcConfiguration configuration(
+            AuthRateLimitInterceptor interceptor,
+            boolean loginEnabled,
+            boolean registerEnabled,
+            boolean refreshEnabled,
+            boolean sessionReauthEnabled) {
         return new AuthRateLimitWebMvcConfiguration(
                 interceptor,
                 new LoginRateLimitProperties(10, Duration.ofMinutes(1), "test:login", loginEnabled),
                 new RegisterRateLimitProperties(
                         5, Duration.ofHours(1), "test:register", registerEnabled),
                 new RefreshRateLimitProperties(
-                        30, Duration.ofMinutes(1), "test:refresh", refreshEnabled));
+                        30, Duration.ofMinutes(1), "test:refresh", refreshEnabled),
+                new SessionReauthRateLimitProperties(
+                        5,
+                        Duration.ofMinutes(15),
+                        "test:session-reauth",
+                        sessionReauthEnabled));
     }
 
     private static class CapturingInterceptorRegistry extends InterceptorRegistry {

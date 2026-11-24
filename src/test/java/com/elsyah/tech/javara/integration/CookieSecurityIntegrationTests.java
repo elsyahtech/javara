@@ -8,8 +8,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import jakarta.servlet.http.Cookie;
 
 import java.util.UUID;
+import java.util.ArrayList;
+import java.util.List;
 import java.nio.charset.StandardCharsets;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -32,6 +35,7 @@ import com.elsyah.tech.javara.testsupport.PostgresRedisTestSupport;
 import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
 import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.utils.security.PasswordHashService;
+import com.elsyah.tech.javara.testsupport.SessionTokenTestSupport;
 
 @SpringBootTest(properties = {
         "app.security.jwt.signing-key=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
@@ -64,6 +68,17 @@ class CookieSecurityIntegrationTests extends PostgresRedisTestSupport {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    private final List<UUID> createdUserIds = new ArrayList<>();
+
+    @AfterEach
+    void cleanUpTestUsers() {
+        for (UUID userId : createdUserIds) {
+            refreshTokenRepository.deleteByUserId(userId);
+            userRepository.deleteById(userId);
+        }
+        createdUserIds.clear();
+    }
 
     // Verifies that cookie mode requires CSRF and accepts the issued CSRF cookie/header pair.
     @Test
@@ -103,8 +118,14 @@ class CookieSecurityIntegrationTests extends PostgresRedisTestSupport {
     void accessCookieAuthenticatesProtectedRoutes() throws Exception {
         UserEntity user = new UserEntity();
         user.setId(UUID.randomUUID());
-        user.setEmail("user@example.com");
-        String token = accessTokenService.issue(user);
+        user.setEmail("cookie-user-" + user.getId() + "@example.com");
+        createdUserIds.add(user.getId());
+        String token = SessionTokenTestSupport.issueAccessToken(
+                user,
+                userRepository,
+                refreshTokenRepository,
+                accessTokenService,
+                passwordHashService);
 
         mockMvc.perform(get("/api/v1/users")
                         .cookie(new Cookie("ACCESS_TOKEN", token)))

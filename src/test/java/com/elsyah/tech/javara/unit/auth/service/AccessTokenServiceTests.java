@@ -39,13 +39,18 @@ class AccessTokenServiceTests {
         user.setId(uuid("user-1"));
         user.setEmail("user@example.com");
         user.setRole(UserRole.ADMIN);
+        UUID sessionId = uuid("session-1");
 
-        Jwt decoded = decoder.decode(service.issue(user));
+        Jwt decoded = decoder.decode(service.issue(user, sessionId, now));
 
         assertEquals(uuid("user-1").toString(), decoded.getSubject());
         assertEquals(now, decoded.getIssuedAt());
         assertEquals(now.plus(Duration.ofMinutes(15)), decoded.getExpiresAt());
         assertEquals("javara", decoded.getClaimAsString("iss"));
+        assertEquals(sessionId.toString(), decoded.getClaimAsString("sid"));
+        assertEquals(
+                now.getEpochSecond(),
+                ((Number) decoded.getClaim("auth_time")).longValue());
         assertEquals("user@example.com", decoded.getClaimAsString("email"));
         assertEquals("ADMIN", decoded.getClaimAsStringList("roles").get(0));
         assertTrue(Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt())

@@ -17,9 +17,26 @@ Registration creates a `USER`, never an ADMIN. The initial ADMIN is created
 from bootstrap configuration. Do not expose bootstrap credentials to clients.
 
 Refresh rotates the refresh token. Keep the newest token and discard the old
-one. Logout requires only the current refresh token; it still works after the
-access token expires. Changing a password revokes that user's active refresh
-tokens. An already-issued access token is still accepted until its expiry.
+one. User access tokens are bound to a backend-validated session. Logout,
+password changes, account disablement, and account deletion revoke that session
+or the user's sessions, so an already-issued access token is rejected on its
+next protected request.
+
+The default session policy allows five concurrent sessions per user, rejects a
+new login at that limit, expires sessions after 15 minutes without activity,
+and enforces a 12-hour absolute lifetime. Session policy is currently global;
+per-tenant tightening is not available until tenant policy support is designed
+and implemented. Older access tokens without a session identifier are rejected
+after the session-lifecycle migration, so clients must authenticate again.
+
+Users can list their active sessions with `GET /api/v1/auth/sessions`. The
+session termination endpoints require the user's current password; terminating
+all sessions also invalidates the session used to make the request.
+Session termination endpoints are limited to five requests per 15 minutes per
+client address by default. When deployed behind a proxy, configure trusted
+client-address handling in the servlet container so unrelated users are not
+grouped under the proxy address; do not trust arbitrary forwarded headers. The
+policy is configurable under `app.middleware.rate-limit.session-reauth`.
 
 For browser cookies and CSRF, see the
 [cookie authentication tutorial](../tutorial/browser-cookie-authentication.md).
@@ -33,12 +50,16 @@ For browser cookies and CSRF, see the
 | `POST /api/v1/auth/login` | Public | Returns tokens or sets cookies |
 | `POST /api/v1/auth/refresh` | Public | Rotates a refresh token |
 | `POST /api/v1/auth/logout` | Current refresh token | Revokes that session; cookie mode also requires a CSRF token |
+| `GET /api/v1/auth/sessions` | Authenticated USER | Lists the user's active sessions |
+| `POST /api/v1/auth/sessions/{sessionId}/terminate` | Same USER | Requires current password; terminates the selected session |
+| `POST /api/v1/auth/sessions/terminate-all` | Same USER | Requires current password; terminates all sessions |
+| `POST /api/v1/admin/users/{userId}/sessions/terminate` | ADMIN | Requires the administrator's current password; terminates the target user's sessions |
 | `GET /api/v1/auth/csrf` | Public in cookie mode | Gets a CSRF token; not found in Bearer mode |
 | `GET /api/v1/users?page=0&size=20` | ADMIN | Returns a user page with total count |
 | `POST /api/v1/users` | ADMIN | Creates a USER |
 | `GET /api/v1/users/{id}` | Same USER or ADMIN | Gets a user |
 | `GET /api/v1/users/findUserByIdWithSelectedColumns/{id}` | Same USER or ADMIN | Gets selected fields |
-| `PUT /api/v1/users/{id}` | Same USER or ADMIN | Replaces the mutable fields in the request |
+| `PUT /api/v1/users/{id}` | Same USER or ADMIN | Replaces the mutable fields in the request; password changes still require a dedicated current-password flow |
 | `DELETE /api/v1/users/{id}` | Same USER or ADMIN | Soft-deletes the user |
 
 “Same USER” means the authenticated account ID must match the `{id}` in the
@@ -59,7 +80,9 @@ User creation and update expect JSON:
 The password is required and must be 8–72 characters. On update,
 `isActive` is optional. Public registration always creates an active USER.
 The user-management `PUT` endpoint requires a password as part of the full
-request; it is not a partial-update endpoint.
+request; it is not a partial-update endpoint. Do not use this endpoint to
+change a user's password: a dedicated current-password change flow is still
+required.
 
 Responses use an envelope. Successful responses contain fields such as
 `httpCode`, `message`, `success`, and `data`. Errors contain `httpCode`,

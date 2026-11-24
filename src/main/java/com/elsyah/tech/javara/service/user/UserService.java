@@ -190,6 +190,8 @@ public class UserService {
 
             boolean passwordChanged =
                     !passwordHashService.matches(request.password(), userEntity.getPassword());
+            boolean accountDisabled = Boolean.TRUE.equals(userEntity.getIsActive())
+                    && Boolean.FALSE.equals(request.isActive());
             userEntity.setEmail(request.email());
             userEntity.setPassword(passwordHashService.encode(request.password()));
             if (request.isActive() != null) {
@@ -199,7 +201,7 @@ public class UserService {
             userEntity.setUpdatedAt(now);
 
             UserEntity updatedUser = repository.saveAndFlush(userEntity);
-            if (passwordChanged) {
+            if (passwordChanged || accountDisabled) {
                 refreshTokenRepository.revokeActiveTokensForUser(id, now);
             }
             return new ServiceResult<>(updatedUser, HttpStatus.OK, "User updated successfully");
@@ -225,10 +227,11 @@ public class UserService {
         Optional<UserEntity> optionalUser = repository.findByIdForUpdate(id);
         if (optionalUser.isPresent()) {
             UserEntity deletedUser = optionalUser.get();
-
-            deletedUser.setDeletedAt(clock.instant());
+            Instant now = clock.instant();
+            deletedUser.setDeletedAt(now);
             
             repository.saveAndFlush(deletedUser);
+            refreshTokenRepository.revokeActiveTokensForUser(id, now);
             return new ServiceResult<>(deletedUser, HttpStatus.OK, "User deleted successfully");
         }
 

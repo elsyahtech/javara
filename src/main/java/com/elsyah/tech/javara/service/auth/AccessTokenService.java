@@ -28,7 +28,7 @@ public class AccessTokenService {
         this.clock = clock;
     }
 
-    public String issue(UserEntity user) {
+    public String issue(UserEntity user, UUID sessionId, Instant authenticatedAt) {
         Instant issuedAt = clock.instant();
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .issuer(JwtTokenConfiguration.issuer())
@@ -36,6 +36,8 @@ public class AccessTokenService {
                 .expiresAt(issuedAt.plus(properties.accessTokenTtl()))
                 .subject(user.getId().toString())
                 .id(UUID.randomUUID().toString())
+                .claim("sid", sessionId.toString())
+                .claim("auth_time", authenticatedAt.getEpochSecond())
                 .claim("email", user.getEmail())
                 .claim("roles", List.of(user.getRole().name()))
                 .build();

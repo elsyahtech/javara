@@ -12,6 +12,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -30,6 +31,7 @@ import org.springframework.http.HttpStatus;
 import com.elsyah.tech.javara.entity.auth.RefreshTokenEntity;
 import com.elsyah.tech.javara.entity.user.UserEntity;
 import com.elsyah.tech.javara.middleware.security.JwtProperties;
+import com.elsyah.tech.javara.middleware.security.SessionProperties;
 import com.elsyah.tech.javara.middleware.security.TokenTransport;
 import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
 import com.elsyah.tech.javara.repository.user.UserRepository;
@@ -56,7 +58,10 @@ class AuthServiceTests {
         LoginRequest request = new LoginRequest("user@example.com", "password123");
         when(userService.login(request)).thenReturn(
                 new ServiceResult<>(user, HttpStatus.OK, "Login successful"));
-        when(accessTokenService.issue(user)).thenReturn("access-token");
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+        when(accessTokenService.issue(
+                        any(UserEntity.class), any(UUID.class), any(Instant.class)))
+                .thenReturn("access-token");
 
         AuthServiceResult result = service.login(request);
 
@@ -70,7 +75,38 @@ class AuthServiceTests {
         assertTrue(storedToken.getTokenHash().matches("[0-9a-f]{64}"));
         assertEquals(hash(result.refreshToken()), storedToken.getTokenHash());
         assertEquals(uuid("user-1"), storedToken.getUserId());
-        assertEquals(NOW.plus(Duration.ofDays(30)), storedToken.getExpiresAt());
+        assertNotNull(storedToken.getSessionId());
+        assertEquals(NOW, storedToken.getSessionStartedAt());
+        assertEquals(NOW, storedToken.getLastActivityAt());
+        assertEquals(NOW.plus(Duration.ofHours(12)), storedToken.getSessionExpiresAt());
+        assertEquals(storedToken.getSessionExpiresAt(), storedToken.getExpiresAt());
+    }
+
+    @Test
+    void loginRejectsNewSessionWhenConcurrentSessionLimitIsReached() {
+        UserService userService = mock(UserService.class);
+        UserRepository userRepository = mock(UserRepository.class);
+        RefreshTokenRepository refreshRepository = mock(RefreshTokenRepository.class);
+        AccessTokenService accessTokenService = mock(AccessTokenService.class);
+        AuthService service = service(
+                userService, userRepository, refreshRepository, accessTokenService);
+        UserEntity user = user(uuid("user-1"));
+        LoginRequest request = new LoginRequest("user@example.com", "password123");
+        when(userService.login(request)).thenReturn(
+                new ServiceResult<>(user, HttpStatus.OK, "Login successful"));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+        when(refreshRepository.countActiveSessions(
+                        user.getId(),
+                        NOW,
+                        NOW.minus(Duration.ofMinutes(15))))
+                .thenReturn(5L);
+
+        AuthServiceResult result = service.login(request);
+
+        assertEquals(HttpStatus.CONFLICT, result.status());
+        assertEquals("Maximum number of active sessions reached", result.message());
+        verify(refreshRepository, never()).save(any());
+        verifyNoInteractions(accessTokenService);
     }
 
     // Verifies that a valid refresh token is revoked and replaced with a new token.
@@ -89,7 +125,11 @@ class AuthServiceTests {
         when(refreshRepository.findByTokenHashForUpdate(hash("old-refresh-token")))
                 .thenReturn(Optional.of(oldToken));
         when(userRepository.findByIdForUpdate(uuid("user-1"))).thenReturn(Optional.of(user));
-        when(accessTokenService.issue(user)).thenReturn("new-access-token");
+        when(accessTokenService.issue(
+                        user,
+                        oldToken.getSessionId(),
+                        oldToken.getSessionStartedAt()))
+                .thenReturn("new-access-token");
 
         AuthServiceResult result = service.refresh("old-refresh-token");
 
@@ -100,6 +140,58 @@ class AuthServiceTests {
         assertNotEquals("old-refresh-token", result.refreshToken());
         assertNotNull(oldToken.getRevokedAt());
         assertEquals(hash(result.refreshToken()), tokenCaptor.getValue().getTokenHash());
+        assertEquals(oldToken.getSessionId(), tokenCaptor.getValue().getSessionId());
+        assertEquals(oldToken.getSessionExpiresAt(), tokenCaptor.getValue().getSessionExpiresAt());
+    }
+
+    @Test
+    void refreshRejectsSessionAfterAbsoluteLifetime() {
+        UserService userService = mock(UserService.class);
+        UserRepository userRepository = mock(UserRepository.class);
+        RefreshTokenRepository refreshRepository = mock(RefreshTokenRepository.class);
+        AccessTokenService accessTokenService = mock(AccessTokenService.class);
+        AuthService service = service(
+                userService, userRepository, refreshRepository, accessTokenService);
+        RefreshTokenEntity token = storedToken(uuid("user-1"), "expired-session-token");
+        token.setSessionExpiresAt(NOW.minusSeconds(1));
+        when(refreshRepository.findUserIdByTokenHash(hash("expired-session-token")))
+                .thenReturn(Optional.of(token.getUserId()));
+        when(refreshRepository.findByTokenHashForUpdate(hash("expired-session-token")))
+                .thenReturn(Optional.of(token));
+        when(userRepository.findByIdForUpdate(token.getUserId()))
+                .thenReturn(Optional.of(user(token.getUserId())));
+
+        AuthServiceResult result = service.refresh("expired-session-token");
+
+        assertEquals(HttpStatus.UNAUTHORIZED, result.status());
+        verify(refreshRepository).revokeActiveTokensForSession(
+                token.getSessionId(), token.getUserId(), NOW);
+        verify(refreshRepository, never()).save(any());
+    }
+
+    @Test
+    void refreshRejectsIdleSession() {
+        UserService userService = mock(UserService.class);
+        UserRepository userRepository = mock(UserRepository.class);
+        RefreshTokenRepository refreshRepository = mock(RefreshTokenRepository.class);
+        AccessTokenService accessTokenService = mock(AccessTokenService.class);
+        AuthService service = service(
+                userService, userRepository, refreshRepository, accessTokenService);
+        RefreshTokenEntity token = storedToken(uuid("user-1"), "idle-session-token");
+        token.setLastActivityAt(NOW.minus(Duration.ofMinutes(16)));
+        when(refreshRepository.findUserIdByTokenHash(hash("idle-session-token")))
+                .thenReturn(Optional.of(token.getUserId()));
+        when(refreshRepository.findByTokenHashForUpdate(hash("idle-session-token")))
+                .thenReturn(Optional.of(token));
+        when(userRepository.findByIdForUpdate(token.getUserId()))
+                .thenReturn(Optional.of(user(token.getUserId())));
+
+        AuthServiceResult result = service.refresh("idle-session-token");
+
+        assertEquals(HttpStatus.UNAUTHORIZED, result.status());
+        verify(refreshRepository).revokeActiveTokensForSession(
+                token.getSessionId(), token.getUserId(), NOW);
+        verify(refreshRepository, never()).save(any());
     }
 
     // Verifies that replaying a revoked refresh token revokes the user's other active tokens.
@@ -146,7 +238,8 @@ class AuthServiceTests {
         boolean loggedOut = service.logout("refresh-token");
 
         assertTrue(loggedOut);
-        assertNotNull(token.getRevokedAt());
+        verify(refreshRepository).revokeActiveTokensForSession(
+                token.getSessionId(), token.getUserId(), NOW);
     }
 
     // Verifies that failed login credentials do not create a refresh-token record.
@@ -188,6 +281,7 @@ class AuthServiceTests {
                         "Strict",
                         "ACCESS_TOKEN",
                         "REFRESH_TOKEN"),
+                new SessionProperties(null, null, null),
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -203,6 +297,10 @@ class AuthServiceTests {
         RefreshTokenEntity token = new RefreshTokenEntity();
         token.setTokenHash(hash(rawToken));
         token.setUserId(userId);
+        token.setSessionId(uuid("session-" + rawToken));
+        token.setSessionStartedAt(NOW.minus(Duration.ofMinutes(1)));
+        token.setLastActivityAt(NOW.minus(Duration.ofMinutes(1)));
+        token.setSessionExpiresAt(NOW.plus(Duration.ofHours(12)));
         token.setCreatedAt(NOW.minus(Duration.ofMinutes(1)));
         token.setExpiresAt(NOW.plus(Duration.ofDays(1)));
         return token;

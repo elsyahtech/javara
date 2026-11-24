@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.elsyah.tech.javara.entity.auth.RefreshTokenEntity;
 import com.elsyah.tech.javara.entity.user.UserEntity;
 import com.elsyah.tech.javara.middleware.security.JwtProperties;
+import com.elsyah.tech.javara.middleware.security.SessionProperties;
 import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
 import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.request.auth.LoginRequest;
@@ -33,6 +34,7 @@ public class AuthService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final AccessTokenService accessTokenService;
     private final JwtProperties jwtProperties;
+    private final SessionProperties sessionProperties;
     private final Clock clock;
 
     public AuthService(
@@ -41,12 +43,14 @@ public class AuthService {
             RefreshTokenRepository refreshTokenRepository,
             AccessTokenService accessTokenService,
             JwtProperties jwtProperties,
+            SessionProperties sessionProperties,
             Clock clock) {
         this.userService = userService;
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.accessTokenService = accessTokenService;
         this.jwtProperties = jwtProperties;
+        this.sessionProperties = sessionProperties;
         this.clock = clock;
     }
 
@@ -56,7 +60,32 @@ public class AuthService {
         if (login.isError()) {
             return AuthServiceResult.failure(login.status(), login.message());
         }
-        return issueTokens(login.data(), "Login successful");
+
+        UserEntity user = login.data();
+        Optional<UserEntity> lockedUser = userRepository.findByIdForUpdate(user.getId());
+        if (lockedUser.isEmpty() || !Boolean.TRUE.equals(lockedUser.get().getIsActive())) {
+            return AuthServiceResult.failure(
+                    HttpStatus.UNAUTHORIZED,
+                    "Invalid email or password");
+        }
+
+        Instant now = clock.instant();
+        long activeSessions = refreshTokenRepository.countActiveSessions(
+                user.getId(),
+                now,
+                now.minus(sessionProperties.idleTimeout()));
+        if (activeSessions >= sessionProperties.maxConcurrentSessions()) {
+            return AuthServiceResult.failure(
+                    HttpStatus.CONFLICT,
+                    "Maximum number of active sessions reached");
+        }
+
+        return issueTokens(
+                lockedUser.get(),
+                UUID.randomUUID(),
+                now,
+                now.plus(sessionProperties.absoluteLifetime()),
+                "Login successful");
     }
 
     @Transactional
@@ -85,8 +114,13 @@ public class AuthService {
             revokeActiveTokens(token.getUserId(), now);
             return invalidRefreshToken();
         }
-        if (!token.getExpiresAt().isAfter(now)) {
+        Instant idleDeadline = now.minus(sessionProperties.idleTimeout());
+        if (!token.getExpiresAt().isAfter(now)
+                || !token.getSessionExpiresAt().isAfter(now)
+                || !token.getLastActivityAt().isAfter(idleDeadline)) {
             token.setRevokedAt(now);
+            refreshTokenRepository.revokeActiveTokensForSession(
+                    token.getSessionId(), userId, now);
             return invalidRefreshToken();
         }
 
@@ -97,7 +131,12 @@ public class AuthService {
         }
 
         token.setRevokedAt(now);
-        return issueTokens(optionalUser.get(), "Token refreshed successfully");
+        return issueTokens(
+                optionalUser.get(),
+                token.getSessionId(),
+                token.getSessionStartedAt(),
+                token.getSessionExpiresAt(),
+                "Token refreshed successfully");
     }
 
     @Transactional
@@ -114,24 +153,36 @@ public class AuthService {
 
         RefreshTokenEntity token = storedToken.get();
         if (token.getRevokedAt() == null) {
-            token.setRevokedAt(clock.instant());
+            refreshTokenRepository.revokeActiveTokensForSession(
+                    token.getSessionId(), token.getUserId(), clock.instant());
         }
         return true;
     }
 
-    private AuthServiceResult issueTokens(UserEntity user, String message) {
+    private AuthServiceResult issueTokens(
+            UserEntity user,
+            UUID sessionId,
+            Instant sessionStartedAt,
+            Instant sessionExpiresAt,
+            String message) {
         String rawRefreshToken = newRefreshToken();
         Instant now = clock.instant();
         RefreshTokenEntity storedToken = new RefreshTokenEntity();
         storedToken.setTokenHash(hashToken(rawRefreshToken));
         storedToken.setUserId(user.getId());
+        storedToken.setSessionId(sessionId);
+        storedToken.setSessionStartedAt(sessionStartedAt);
+        storedToken.setLastActivityAt(now);
+        storedToken.setSessionExpiresAt(sessionExpiresAt);
         storedToken.setCreatedAt(now);
-        storedToken.setExpiresAt(now.plus(jwtProperties.refreshTokenTtl()));
+        storedToken.setExpiresAt(min(
+                now.plus(jwtProperties.refreshTokenTtl()),
+                sessionExpiresAt));
         refreshTokenRepository.save(storedToken);
 
         return new AuthServiceResult(
                 user,
-                accessTokenService.issue(user),
+                accessTokenService.issue(user, sessionId, sessionStartedAt),
                 rawRefreshToken,
                 HttpStatus.OK,
                 message);
@@ -139,6 +190,10 @@ public class AuthService {
 
     private void revokeActiveTokens(UUID userId, Instant revokedAt) {
         refreshTokenRepository.revokeActiveTokensForUser(userId, revokedAt);
+    }
+
+    private static Instant min(Instant first, Instant second) {
+        return first.isBefore(second) ? first : second;
     }
 
     private static String newRefreshToken() {

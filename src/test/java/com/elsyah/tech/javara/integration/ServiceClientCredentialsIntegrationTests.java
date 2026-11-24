@@ -11,6 +11,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.AfterEach;
@@ -32,8 +34,11 @@ import tools.jackson.databind.ObjectMapper;
 import com.elsyah.tech.javara.entity.user.UserEntity;
 import com.elsyah.tech.javara.entity.user.UserRole;
 import com.elsyah.tech.javara.middleware.security.ApiSecurityConfiguration;
+import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
+import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.service.auth.AccessTokenService;
 import com.elsyah.tech.javara.testsupport.PostgresRedisTestSupport;
+import com.elsyah.tech.javara.testsupport.SessionTokenTestSupport;
 import com.elsyah.tech.javara.utils.security.PasswordHashService;
 
 @SpringBootTest(properties = {
@@ -63,9 +68,16 @@ class ServiceClientCredentialsIntegrationTests extends PostgresRedisTestSupport 
     private PasswordHashService passwordHashService;
 
     @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private RefreshTokenRepository refreshTokenRepository;
+
+    @Autowired
     private ObjectMapper objectMapper;
 
     private String provisionedClientId;
+    private final List<UUID> createdUserIds = new ArrayList<>();
 
     @AfterEach
     void revokeProvisionedClient() {
@@ -78,6 +90,11 @@ class ServiceClientCredentialsIntegrationTests extends PostgresRedisTestSupport 
                         .build());
             }
         }
+        for (UUID userId : createdUserIds) {
+            refreshTokenRepository.deleteByUserId(userId);
+            userRepository.deleteById(userId);
+        }
+        createdUserIds.clear();
     }
 
     @Test
@@ -212,7 +229,13 @@ class ServiceClientCredentialsIntegrationTests extends PostgresRedisTestSupport 
         user.setId(UUID.randomUUID());
         user.setEmail("service-auth-" + UUID.randomUUID() + "@example.com");
         user.setRole(role);
-        return accessTokenService.issue(user);
+        createdUserIds.add(user.getId());
+        return SessionTokenTestSupport.issueAccessToken(
+                user,
+                userRepository,
+                refreshTokenRepository,
+                accessTokenService,
+                passwordHashService);
     }
 
     private static String basic(String clientId, String secret) {

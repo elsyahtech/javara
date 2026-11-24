@@ -1,0 +1,48 @@
+package com.elsyah.tech.javara.controller.user;
+
+import java.util.UUID;
+
+import jakarta.validation.Valid;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.elsyah.tech.javara.request.auth.SessionReauthRequest;
+import com.elsyah.tech.javara.response.common.ApiResponse;
+import com.elsyah.tech.javara.service.auth.SessionManagementService;
+import com.elsyah.tech.javara.service.common.ServiceResult;
+
+@RestController
+@RequestMapping("/api/v1/admin/users")
+public class AdminSessionController {
+    private final SessionManagementService sessionManagementService;
+
+    public AdminSessionController(SessionManagementService sessionManagementService) {
+        this.sessionManagementService = sessionManagementService;
+    }
+
+    @PostMapping("/{userId}/sessions/terminate")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<Integer>> terminateUserSessions(
+            @AuthenticationPrincipal Jwt principal,
+            @PathVariable UUID userId,
+            @Valid @RequestBody SessionReauthRequest request) {
+        ServiceResult<Integer> result = sessionManagementService.terminateUserSessions(
+                UUID.fromString(principal.getSubject()),
+                userId,
+                request.currentPassword());
+        if (result.isError()) {
+            return ResponseEntity.status(result.status())
+                    .body(ApiResponse.failure(result.status(), result.message()));
+        }
+        return ResponseEntity.status(result.status())
+                .body(ApiResponse.success(result.status(), result.message(), result.data()));
+    }
+}

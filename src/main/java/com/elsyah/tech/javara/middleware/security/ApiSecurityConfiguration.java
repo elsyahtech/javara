@@ -28,7 +28,11 @@ import com.elsyah.tech.javara.middleware.cors.CorsProperties;
 
 @Configuration
 @EnableMethodSecurity
-@EnableConfigurationProperties({SecurityHeadersProperties.class, JwtProperties.class})
+@EnableConfigurationProperties({
+    SecurityHeadersProperties.class,
+    JwtProperties.class,
+    SessionProperties.class
+})
 public class ApiSecurityConfiguration {
     private static final Set<String> PUBLIC_AUTH_ENDPOINTS = Set.of(
             "/api/v1/auth/register",

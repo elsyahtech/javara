@@ -1,25 +1,37 @@
 package com.elsyah.tech.javara.integration;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.UUID;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 
 import com.elsyah.tech.javara.entity.user.UserEntity;
 import com.elsyah.tech.javara.entity.user.UserRole;
+import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
 import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.service.auth.AccessTokenService;
+import com.elsyah.tech.javara.service.auth.AuthService;
+import com.elsyah.tech.javara.service.auth.AuthServiceResult;
 import com.elsyah.tech.javara.testsupport.PostgresRedisTestSupport;
+import com.elsyah.tech.javara.testsupport.SessionTokenTestSupport;
+import com.elsyah.tech.javara.request.auth.LoginRequest;
+import com.elsyah.tech.javara.request.user.UserRequest;
+import com.elsyah.tech.javara.service.user.UserService;
 import com.elsyah.tech.javara.utils.security.PasswordHashService;
 
 @SpringBootTest(properties = {
@@ -39,15 +51,29 @@ class SecurityAuthorizationIntegrationTests extends PostgresRedisTestSupport {
     private UserRepository userRepository;
 
     @Autowired
+    private RefreshTokenRepository refreshTokenRepository;
+
+    @Autowired
     private PasswordHashService passwordHashService;
 
-    private UUID createdUserId;
+    @Autowired
+    private AuthService authService;
+
+    @Autowired
+    private UserService userService;
+
+    @Autowired
+    private JwtDecoder jwtDecoder;
+
+    private final List<UUID> createdUserIds = new ArrayList<>();
 
     @AfterEach
     void cleanUpTestUser() {
-        if (createdUserId != null) {
-            userRepository.deleteById(createdUserId);
+        for (UUID userId : createdUserIds) {
+            refreshTokenRepository.deleteByUserId(userId);
+            userRepository.deleteById(userId);
         }
+        createdUserIds.clear();
     }
 
     // Verifies that the welcome endpoint is public while user endpoints reject anonymous requests.
@@ -75,19 +101,20 @@ class SecurityAuthorizationIntegrationTests extends PostgresRedisTestSupport {
     void adminCanListAllUsers() throws Exception {
         UserEntity admin = new UserEntity();
         admin.setId(UUID.randomUUID());
-        admin.setEmail("admin@example.com");
+        admin.setEmail("admin-" + UUID.randomUUID() + "@example.com");
         admin.setRole(UserRole.ADMIN);
+        String adminToken = tokenFor(admin);
 
         UserEntity existingUser = new UserEntity();
-        createdUserId = UUID.randomUUID();
-        existingUser.setId(createdUserId);
-        existingUser.setEmail("authorization-" + createdUserId + "@example.com");
+        existingUser.setId(UUID.randomUUID());
+        existingUser.setEmail("authorization-" + existingUser.getId() + "@example.com");
         existingUser.setPassword(passwordHashService.encode("unused-test-password"));
         existingUser.setIsActive(true);
         userRepository.saveAndFlush(existingUser);
+        createdUserIds.add(existingUser.getId());
 
         mockMvc.perform(get("/api/v1/users")
-                        .header("Authorization", "Bearer " + accessTokenService.issue(admin)))
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk());
     }
 
@@ -100,7 +127,7 @@ class SecurityAuthorizationIntegrationTests extends PostgresRedisTestSupport {
 
         mockMvc.perform(get("/api/v1/users/" + ownId)
                         .header("Authorization", "Bearer " + token))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk());
 
         mockMvc.perform(get("/api/v1/users/" + otherId)
                         .header("Authorization", "Bearer " + token))
@@ -121,11 +148,135 @@ class SecurityAuthorizationIntegrationTests extends PostgresRedisTestSupport {
                 .contains("Refresh token is invalid or expired"));
     }
 
+    @Test
+    void logoutInvalidatesAnAlreadyIssuedAccessToken() throws Exception {
+        UserEntity user = createUser("logout-password");
+        AuthServiceResult login = authService.login(
+                new LoginRequest(user.getEmail(), "logout-password"));
+        assertEquals(HttpStatus.OK, login.status());
+
+        mockMvc.perform(get("/api/v1/users/" + user.getId())
+                        .header("Authorization", "Bearer " + login.accessToken()))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/v1/auth/logout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"" + login.refreshToken() + "\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/users/" + user.getId())
+                        .header("Authorization", "Bearer " + login.accessToken()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void disablingAnAccountInvalidatesItsExistingAccessToken() throws Exception {
+        UserEntity user = createUser("disable-password");
+        AuthServiceResult login = authService.login(
+                new LoginRequest(user.getEmail(), "disable-password"));
+        assertEquals(HttpStatus.OK, login.status());
+
+        var updateResult = userService.updateUser(
+                user.getId(),
+                new UserRequest(user.getEmail(), "disable-password", false));
+        assertEquals(HttpStatus.OK, updateResult.status());
+
+        mockMvc.perform(get("/api/v1/users/" + user.getId())
+                        .header("Authorization", "Bearer " + login.accessToken()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void userCanReauthenticateToListAndTerminateASession() throws Exception {
+        UserEntity user = createUser("session-password");
+        AuthServiceResult firstLogin = authService.login(
+                new LoginRequest(user.getEmail(), "session-password"));
+        AuthServiceResult secondLogin = authService.login(
+                new LoginRequest(user.getEmail(), "session-password"));
+        UUID firstSessionId = UUID.fromString(
+                jwtDecoder.decode(firstLogin.accessToken()).getClaimAsString("sid"));
+
+        MvcResult sessions = mockMvc.perform(get("/api/v1/auth/sessions")
+                        .header("Authorization", "Bearer " + secondLogin.accessToken()))
+                .andExpect(status().isOk())
+                .andReturn();
+        org.junit.jupiter.api.Assertions.assertTrue(
+                sessions.getResponse().getContentAsString().contains("\"current\":true"));
+
+        mockMvc.perform(post("/api/v1/auth/sessions/" + firstSessionId + "/terminate")
+                        .header("Authorization", "Bearer " + secondLogin.accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"currentPassword\":\"wrong-password\"}"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/users/" + user.getId())
+                        .header("Authorization", "Bearer " + firstLogin.accessToken()))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/v1/auth/sessions/" + firstSessionId + "/terminate")
+                        .header("Authorization", "Bearer " + secondLogin.accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"currentPassword\":\"session-password\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/users/" + user.getId())
+                        .header("Authorization", "Bearer " + firstLogin.accessToken()))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/users/" + user.getId())
+                        .header("Authorization", "Bearer " + secondLogin.accessToken()))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void administratorCanReauthenticateToTerminateAnotherUsersSessions() throws Exception {
+        UserEntity admin = createUser("admin-session-password", UserRole.ADMIN);
+        UserEntity user = createUser("target-session-password");
+        AuthServiceResult adminLogin = authService.login(
+                new LoginRequest(admin.getEmail(), "admin-session-password"));
+        AuthServiceResult userLogin = authService.login(
+                new LoginRequest(user.getEmail(), "target-session-password"));
+
+        mockMvc.perform(post(
+                        "/api/v1/admin/users/" + user.getId() + "/sessions/terminate")
+                        .header("Authorization", "Bearer " + adminLogin.accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"currentPassword\":\"admin-session-password\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/users/" + user.getId())
+                        .header("Authorization", "Bearer " + userLogin.accessToken()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    private UserEntity createUser(String password) {
+        return createUser(password, UserRole.USER);
+    }
+
+    private UserEntity createUser(String password, UserRole role) {
+        UserEntity user = new UserEntity();
+        user.setId(UUID.randomUUID());
+        user.setEmail("session-" + user.getId() + "@example.com");
+        user.setPassword(passwordHashService.encode(password));
+        user.setIsActive(true);
+        user.setRole(role);
+        userRepository.saveAndFlush(user);
+        createdUserIds.add(user.getId());
+        return user;
+    }
+
     private String tokenFor(UUID userId) {
         UserEntity user = new UserEntity();
         user.setId(userId);
-        user.setEmail("user@example.com");
+        user.setEmail("authorization-" + userId + "@example.com");
         user.setRole(UserRole.USER);
-        return accessTokenService.issue(user);
+        return tokenFor(user);
+    }
+
+    private String tokenFor(UserEntity user) {
+        createdUserIds.add(user.getId());
+        return SessionTokenTestSupport.issueAccessToken(
+                user,
+                userRepository,
+                refreshTokenRepository,
+                accessTokenService,
+                passwordHashService);
     }
 }

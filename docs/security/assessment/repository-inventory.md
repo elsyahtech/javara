@@ -46,10 +46,12 @@ do not make a customer-facing isolation claim based on this code alone. This is
 a product capability gap to resolve and verify; it is not, by itself, an ASVS
 pass/fail determination or a confirmed vulnerability.
 
-The tenant model remains an open architecture decision. Before implementation
-or assessment, document whether JAVARA will support shared multi-tenancy,
-dedicated deployments, or both, and define the expected isolation boundary for
-users, service clients, authorization data, configuration, logs, and backups.
+The product owner selected shared multi-tenancy as the target on 2026-11-24.
+The product owner also selected one global user identity with membership in
+multiple companies. These are target decisions only; the assessed source commit
+has no tenant membership model. Before implementation can be verified, define
+the isolation boundary for users, service clients, authorization data,
+configuration, logs, and backups.
 
 ## Security evidence candidates for later verification
 
@@ -74,7 +76,8 @@ that any requirement is satisfied:
 
 ## Next repository assessment step
 
-Resolve the multi-company architecture decision before mapping tenant-specific
-controls. Then verify authentication, authorization, token lifecycle, and API
-security behavior against the versioned ASVS requirements, recording the exact
-source/test evidence and leaving unverified controls as `Pending`.
+Review the detailed [shared multi-tenant security decision](tenant-model.md)
+and resolve its remaining design questions before implementation. Then verify
+authentication, authorization, token lifecycle, and API security behavior
+against the versioned ASVS requirements, recording the exact source/test
+evidence and leaving unverified controls as `Pending`.

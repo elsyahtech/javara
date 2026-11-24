@@ -14,6 +14,7 @@ import com.elsyah.tech.javara.middleware.ratelimit.AuthRateLimiter;
 import com.elsyah.tech.javara.middleware.ratelimit.LoginRateLimitProperties;
 import com.elsyah.tech.javara.middleware.ratelimit.RefreshRateLimitProperties;
 import com.elsyah.tech.javara.middleware.ratelimit.RegisterRateLimitProperties;
+import com.elsyah.tech.javara.middleware.ratelimit.SessionReauthRateLimitProperties;
 
 class AuthRateLimitInterceptorTests {
     @Test
@@ -25,8 +26,9 @@ class AuthRateLimitInterceptorTests {
                 5, java.time.Duration.ofHours(1), "test:register", true);
         RefreshRateLimitProperties refresh = new RefreshRateLimitProperties(
                 30, java.time.Duration.ofMinutes(1), "test:refresh", true);
+        SessionReauthRateLimitProperties sessionReauth = sessionReauthProperties();
         AuthRateLimitInterceptor interceptor =
-                new AuthRateLimitInterceptor(limiter, login, register, refresh);
+                new AuthRateLimitInterceptor(limiter, login, register, refresh, sessionReauth);
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setMethod("POST");
         request.setRequestURI("/api/v1/auth/login");
@@ -46,8 +48,9 @@ class AuthRateLimitInterceptorTests {
                 5, java.time.Duration.ofHours(1), "test:register", true);
         RefreshRateLimitProperties refresh = new RefreshRateLimitProperties(
                 30, java.time.Duration.ofMinutes(1), "test:refresh", true);
+        SessionReauthRateLimitProperties sessionReauth = sessionReauthProperties();
         AuthRateLimitInterceptor interceptor =
-                new AuthRateLimitInterceptor(limiter, login, register, refresh);
+                new AuthRateLimitInterceptor(limiter, login, register, refresh, sessionReauth);
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setMethod("POST");
         request.setRemoteAddr("192.0.2.25");
@@ -62,6 +65,34 @@ class AuthRateLimitInterceptorTests {
     }
 
     @Test
+    void checksSessionTerminationUsingItsOwnPolicy() {
+        AuthRateLimiter limiter = mock(AuthRateLimiter.class);
+        SessionReauthRateLimitProperties sessionReauth = sessionReauthProperties();
+        AuthRateLimitInterceptor interceptor = new AuthRateLimitInterceptor(
+                limiter,
+                new LoginRateLimitProperties(
+                        10, java.time.Duration.ofMinutes(1), "test:login", true),
+                new RegisterRateLimitProperties(
+                        5, java.time.Duration.ofHours(1), "test:register", true),
+                new RefreshRateLimitProperties(
+                        30, java.time.Duration.ofMinutes(1), "test:refresh", true),
+                sessionReauth);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setMethod("POST");
+        request.setRemoteAddr("192.0.2.25");
+
+        request.setRequestURI("/api/v1/auth/sessions/terminate-all");
+        assertTrue(interceptor.preHandle(request, new MockHttpServletResponse(), new Object()));
+        request.setRequestURI("/api/v1/auth/sessions/73fdb845-4e31-4cb0-91d1-1059770bc541/terminate");
+        assertTrue(interceptor.preHandle(request, new MockHttpServletResponse(), new Object()));
+        request.setRequestURI("/api/v1/admin/users/73fdb845-4e31-4cb0-91d1-1059770bc541/sessions/terminate");
+        assertTrue(interceptor.preHandle(request, new MockHttpServletResponse(), new Object()));
+
+        org.mockito.Mockito.verify(limiter, org.mockito.Mockito.times(3))
+                .checkAllowed("192.0.2.25", sessionReauth);
+    }
+
+    @Test
     void skipsNonPostRequests() {
         AuthRateLimiter limiter = mock(AuthRateLimiter.class);
         AuthRateLimitInterceptor interceptor = new AuthRateLimitInterceptor(
@@ -71,7 +102,8 @@ class AuthRateLimitInterceptorTests {
                 new RegisterRateLimitProperties(
                         5, java.time.Duration.ofHours(1), "test:register", true),
                 new RefreshRateLimitProperties(
-                        30, java.time.Duration.ofMinutes(1), "test:refresh", true));
+                        30, java.time.Duration.ofMinutes(1), "test:refresh", true),
+                sessionReauthProperties());
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setMethod("GET");
         request.setRequestURI("/api/v1/auth/login");
@@ -79,5 +111,10 @@ class AuthRateLimitInterceptorTests {
         assertTrue(interceptor.preHandle(request, new MockHttpServletResponse(), new Object()));
 
         verifyNoInteractions(limiter);
+    }
+
+    private static SessionReauthRateLimitProperties sessionReauthProperties() {
+        return new SessionReauthRateLimitProperties(
+                5, java.time.Duration.ofMinutes(15), "test:session-reauth", true);
     }
 }

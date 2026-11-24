@@ -2,14 +2,17 @@
 
 ## Status
 
-Scoping and repository evidence inventory only. No ASVS requirement has been
-verified as passing or failing, and no production-readiness claim is made.
+The assessment is in progress. A preliminary repository review of V6 and V7
+recorded 21 confirmed gaps; the other 324 requirements remain not assessed.
+No requirement has been verified as passing, and no production-readiness claim
+is made. See the [authentication and session management review](authentication-session-review.md).
 
 ## Assessment baseline
 
 | Field | Value |
 |---|---|
 | Standard and target | OWASP ASVS v5.0.0, Level 3 |
+| Required outcome | Satisfy all 345 requirements; no exclusions without explicit Auditor approval |
 | Source repository | `elsyahtech/javara` |
 | Branch at baseline | `postgres` |
 | Assessed source commit | `aacdb7858552fe2cfd35eb40ae04808d0e33c120` |
@@ -70,18 +73,20 @@ unredacted production configuration in this repository or assessment evidence.
 
 | Decision | Current status | Required outcome |
 |---|---|---|
-| Multi-company isolation model (shared multi-tenant, dedicated deployments, or hybrid) | Open | Document the supported model(s), trust boundaries, and isolation guarantees; verify them with tests and architecture evidence. |
+| Multi-company isolation model | Shared multi-tenant selected on 2026-11-24; implementation not verified | Define tenant boundaries and isolation guarantees; verify them with architecture evidence and tests. |
 | Supported customer deployment profiles | Open | Define supported environments and responsibility boundaries between JAVARA and each customer. |
 | Industry and jurisdiction overlays | Open | Identify applicable requirements per customer use case; do not infer them from ASVS. |
 | Independent assessment scope | Open | Agree assessor, target release, environment, methods, and report expectations. |
 
-No multi-company isolation or sector-readiness claim should be treated as
-verified until the relevant decision is resolved and evidence is reviewed.
+The target isolation model is selected, but no multi-company isolation or
+sector-readiness claim should be treated as verified until the design is
+implemented and its evidence is reviewed.
 
 ## Assessment method
 
 1. Triage each ASVS requirement for the agreed JAVARA baseline and record
-   applicability with rationale.
+   applicability with rationale. The default is in scope; do not exclude a
+   requirement without explicit Auditor approval.
 2. Discover and verify repository evidence against the exact requirement; the
    existence of code or a test alone is not a pass.
 3. Keep production and customer controls pending until their operators provide

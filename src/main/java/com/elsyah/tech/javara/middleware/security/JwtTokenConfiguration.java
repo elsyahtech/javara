@@ -2,6 +2,7 @@ package com.elsyah.tech.javara.middleware.security;
 
 import java.time.Clock;
 import java.util.List;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
@@ -23,6 +24,8 @@ import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 
+import com.elsyah.tech.javara.service.auth.SessionTokenValidator;
+
 @Configuration
 @EnableConfigurationProperties(BootstrapAdminProperties.class)
 public class JwtTokenConfiguration {
@@ -38,11 +41,13 @@ public class JwtTokenConfiguration {
             JwtProperties properties,
             ObjectProvider<RegisteredClientRepository> registeredClientRepositories,
             ObjectProvider<ServiceAuthProperties> serviceAuthProperties,
+            SessionTokenValidator sessionTokenValidator,
             Clock clock) {
         return createJwtDecoder(
                 properties,
                 registeredClientRepositories::getIfAvailable,
                 serviceAuthProperties::getIfAvailable,
+                sessionTokenValidator::isActive,
                 clock);
     }
 
@@ -51,13 +56,14 @@ public class JwtTokenConfiguration {
     }
 
     public JwtDecoder jwtDecoder(JwtProperties properties, Clock clock) {
-        return createJwtDecoder(properties, () -> null, () -> null, clock);
+        return createJwtDecoder(properties, () -> null, () -> null, token -> true, clock);
     }
 
     private JwtDecoder createJwtDecoder(
             JwtProperties properties,
             Supplier<RegisteredClientRepository> registeredClientRepository,
             Supplier<ServiceAuthProperties> serviceAuthProperties,
+            Predicate<Jwt> userSessionValidator,
             Clock clock) {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(properties.secretKey())
                 .macAlgorithm(MacAlgorithm.HS256)
@@ -100,7 +106,8 @@ public class JwtTokenConfiguration {
             List<String> roles = token.getClaimAsStringList("roles");
             if (roles != null
                     && !roles.isEmpty()
-                    && roles.stream().allMatch(role -> "USER".equals(role) || "ADMIN".equals(role))) {
+                    && roles.stream().allMatch(role -> "USER".equals(role) || "ADMIN".equals(role))
+                    && userSessionValidator.test(token)) {
                 return OAuth2TokenValidatorResult.success();
             }
             return invalidToken();
