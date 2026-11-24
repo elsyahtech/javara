@@ -39,6 +39,7 @@ import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.request.user.UserRequest;
 import com.elsyah.tech.javara.request.user.UserUpdateRequest;
 import com.elsyah.tech.javara.request.auth.LoginRequest;
+import com.elsyah.tech.javara.service.user.PasswordPolicyService;
 import com.elsyah.tech.javara.service.user.UserService;
 import com.elsyah.tech.javara.service.common.ServiceResult;
 import com.elsyah.tech.javara.utils.security.PasswordHashService;
@@ -65,6 +66,7 @@ class UserServiceTests {
                 repository,
                 new PasswordHashService(),
                 mock(RefreshTokenRepository.class),
+                allowedPasswordPolicy(),
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -75,7 +77,15 @@ class UserServiceTests {
                 repository,
                 passwordHashService,
                 mock(RefreshTokenRepository.class),
+                allowedPasswordPolicy(),
                 Clock.fixed(NOW, ZoneOffset.UTC));
+    }
+
+    private static PasswordPolicyService allowedPasswordPolicy() {
+        PasswordPolicyService passwordPolicyService = mock(PasswordPolicyService.class);
+        when(passwordPolicyService.isPasswordAllowed(
+                org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
+        return passwordPolicyService;
     }
 
     // Verifies that an existing email prevents user creation and repository saves.
@@ -92,6 +102,28 @@ class UserServiceTests {
         assertEquals(HttpStatus.CONFLICT, result.status());
         assertNull(result.data());
         verify(repository, never()).save(any());
+    }
+
+    @Test
+    void createUserRejectsCommonOrBreachedPassword() {
+        UserRepository repository = mock(UserRepository.class);
+        PasswordPolicyService passwordPolicyService = mock(PasswordPolicyService.class);
+        when(passwordPolicyService.isPasswordAllowed("compromised-password")).thenReturn(false);
+        UserService service = new UserService(
+                repository,
+                new PasswordHashService(),
+                mock(RefreshTokenRepository.class),
+                passwordPolicyService,
+                Clock.fixed(NOW, ZoneOffset.UTC));
+
+        ServiceResult<UserEntity> result = service.createUser(
+                new UserRequest("new@example.com", "compromised-password", true));
+
+        assertEquals(HttpStatus.BAD_REQUEST, result.status());
+        assertEquals(
+                "Choose a password that is not commonly used or known to be compromised",
+                result.message());
+        verifyNoInteractions(repository);
     }
 
     // Verifies that a unique email creates, saves, and returns a new user entity.
@@ -253,6 +285,7 @@ class UserServiceTests {
                 repository,
                 passwordHashService,
                 refreshTokenRepository,
+                allowedPasswordPolicy(),
                 Clock.fixed(NOW, ZoneOffset.UTC)).updateUser(uuid("user-1"), request);
 
         assertSame(user, result.data());
@@ -332,6 +365,7 @@ class UserServiceTests {
                 repository,
                 passwordHashService,
                 refreshTokenRepository,
+                allowedPasswordPolicy(),
                 Clock.fixed(NOW, ZoneOffset.UTC)).updateUser(uuid("user-1"), request);
 
         assertEquals(HttpStatus.OK, result.status());
@@ -355,6 +389,7 @@ class UserServiceTests {
                 repository,
                 passwordHashService,
                 refreshTokenRepository,
+                allowedPasswordPolicy(),
                 Clock.fixed(NOW, ZoneOffset.UTC));
         ServiceResult<Void> result =
                 service.changePassword(user.getId(), "current-password", "new-password-123");
@@ -380,6 +415,7 @@ class UserServiceTests {
                 repository,
                 passwordHashService,
                 refreshTokenRepository,
+                allowedPasswordPolicy(),
                 Clock.fixed(NOW, ZoneOffset.UTC))
                 .changePassword(user.getId(), "incorrect-password", "new-password-123");
 
@@ -404,10 +440,42 @@ class UserServiceTests {
                 repository,
                 passwordHashService,
                 refreshTokenRepository,
+                allowedPasswordPolicy(),
                 Clock.fixed(NOW, ZoneOffset.UTC))
                 .changePassword(user.getId(), "current-password", "current-password");
 
         assertEquals(HttpStatus.BAD_REQUEST, result.status());
+        verify(repository, never()).saveAndFlush(any());
+        verifyNoInteractions(refreshTokenRepository);
+    }
+
+    @Test
+    void changePasswordRejectsPasswordInConfiguredDenylist() {
+        UserRepository repository = mock(UserRepository.class);
+        RefreshTokenRepository refreshTokenRepository = mock(RefreshTokenRepository.class);
+        PasswordHashService passwordHashService = new PasswordHashService();
+        PasswordPolicyService passwordPolicyService = mock(PasswordPolicyService.class);
+        UserEntity user = new UserEntity();
+        user.setId(uuid("user-1"));
+        user.setPassword(passwordHashService.encode("current-password"));
+        user.setIsActive(true);
+        when(repository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+        when(passwordPolicyService.isPasswordAllowed("known-compromised-password"))
+                .thenReturn(false);
+
+        ServiceResult<Void> result = new UserService(
+                repository,
+                passwordHashService,
+                refreshTokenRepository,
+                passwordPolicyService,
+                Clock.fixed(NOW, ZoneOffset.UTC))
+                .changePassword(
+                        user.getId(),
+                        "current-password",
+                        "known-compromised-password");
+
+        assertEquals(HttpStatus.BAD_REQUEST, result.status());
+        assertTrue(passwordHashService.matches("current-password", user.getPassword()));
         verify(repository, never()).saveAndFlush(any());
         verifyNoInteractions(refreshTokenRepository);
     }

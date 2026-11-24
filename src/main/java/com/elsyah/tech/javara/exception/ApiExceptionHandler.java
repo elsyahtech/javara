@@ -1,5 +1,7 @@
 package com.elsyah.tech.javara.exception;
 
+import java.util.stream.Collectors;
+
 import org.hibernate.exception.ConstraintViolationException;
 
 import org.slf4j.Logger;
@@ -12,6 +14,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -43,6 +47,20 @@ public class ApiExceptionHandler {
     @ExceptionHandler(ApiException.class)
     public ProblemDetail handleException(ApiException exception) {
         return ProblemDetail.forStatusAndDetail(exception.getHttpStatus(), exception.getMessage());
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ApiResponse<Void>> handleRequestValidation(
+            MethodArgumentNotValidException exception) {
+        String message = exception.getBindingResult().getFieldErrors().stream()
+                .map(ApiExceptionHandler::validationMessage)
+                .distinct()
+                .collect(Collectors.joining("; "));
+        if (message.isBlank()) {
+            message = "Request validation failed";
+        }
+        HttpStatus status = HttpStatus.BAD_REQUEST;
+        return ResponseEntity.status(status).body(ApiResponse.failure(status, message));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
@@ -99,5 +117,18 @@ public class ApiExceptionHandler {
             }
         }
         return false;
+    }
+
+    private static String validationMessage(FieldError error) {
+        if ("userUpdateRequest".equals(error.getObjectName())
+                && "password".equals(error.getField())) {
+            return "password: Use the dedicated password-change endpoint";
+        }
+        return switch (error.getField()) {
+            case "password" -> "password: Use a password that meets the documented policy";
+            case "currentPassword" -> "currentPassword: Provide a valid current password";
+            case "newPassword" -> "newPassword: Password must be 8-72 characters";
+            default -> error.getField() + ": " + error.getDefaultMessage();
+        };
     }
 }

@@ -103,7 +103,12 @@ default re-authentication rate limit of five requests per 15 minutes per
 client address.
 
 An incorrect current password returns `401 Unauthorized`; reusing the current
-password returns `400 Bad Request`.
+password or selecting a password in the configured common/breached-password
+datasets returns `400 Bad Request`. The API uses the same generic message for
+both dataset matches and never logs the submitted password.
+Validation errors identify the affected field and a safe reason; rejected
+values, including passwords, are not included in API responses or application
+logs.
 
 Responses use an envelope. Successful responses contain fields such as
 `httpCode`, `message`, `success`, and `data`. Errors contain `httpCode`,

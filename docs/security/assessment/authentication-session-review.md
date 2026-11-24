@@ -61,21 +61,31 @@ requirement is being claimed as `Pass`.
   the current password, rejects reuse, rate-limits attempts, and revokes all
   sessions. The legacy user-update DTO no longer accepts a password. Cookie
   mode clears its authentication cookies after success.
+- Password creation, self-service changes, and bootstrap-admin creation now
+  check an operator-managed denylist and local compromised-password hashes.
+  Startup fails with actionable messages if required files are missing,
+  unreadable, undersized, empty, or malformed. Production/staging profiles
+  cannot disable the policy, and illustrative sample mode is limited to
+  local/development/test profiles. Setup seeds tiny example files so local
+  startup works, but no production-quality dataset is bundled or independently
+  verified; data provenance, licensing, freshness, coverage, and deployment
+  remain operational evidence still required for assessment.
 
-The focused regression command completed successfully with 85 tests,
+The focused regression command completed successfully with 48 tests,
 0 failures, and 0 errors:
 
 ```text
-bash scripts/maven.sh clean -Dtest=AuthControllerTests,UserServiceTests,UserControllerTests,UserRepositoryTests,AuthRateLimitInterceptorTests,AuthRateLimitWebMvcConfigurationTests,SecurityAuthorizationIntegrationTests,UserConcurrentIntegrationTests test
+bash scripts/maven.sh -Dtest=PasswordPolicyServiceTests,PasswordPolicyConfigurationTests,UserServiceTests,BootstrapAdminServiceTests,SecurityAuthorizationIntegrationTests test
 ```
 
 This verifies only the tested repository behavior. Database-write cost on every
 authenticated user request has not been load-tested. Token/timeout behavior
-still needs deployment-level verification. The self-service password change
-does not yet check a breached-password dataset or top-3000 denylist and does
-not send security notifications. Email changes still lack the required
-re-authentication and verification flow. MFA, password recovery, and
-registration anti-enumeration remain open.
+still needs deployment-level verification. The configured password-data files
+have not been supplied, and the current in-memory breach-hash lookup has not
+been load-tested against large corpora. Password-change notifications and
+context-specific password-word checks remain open. Email changes still lack
+the required re-authentication and verification flow. MFA, password recovery,
+and registration anti-enumeration remain open.
 
 ## Confirmed findings
 

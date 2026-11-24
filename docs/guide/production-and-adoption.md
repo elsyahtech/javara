@@ -14,6 +14,8 @@ your product before using real accounts or sensitive data.
 - Password hashing and legacy-hash upgrade support
 - USER/ADMIN authorization and same-user checks for ID-based operations
 - Redis-based per-IP limits for login, registration, and refresh
+- Configurable common and compromised-password checks using operator-managed
+  offline datasets
 - Unit and isolated PostgreSQL/Redis integration tests
 
 ## Important product boundaries
@@ -37,6 +39,74 @@ your business requires invitation-only or administrator-created accounts,
 add and test that control before exposing the service.
 
 ## Before production
+
+### Password policy datasets
+
+Password policy is enabled by default and is required for the `prod`,
+`production`, and `staging` profiles. JAVARA includes only tiny illustrative
+sample files for local setup, not production password or breach datasets. The
+deployment owner must provide approved data, record its provenance/licence,
+and mount it read-only before starting the application.
+
+The default configuration expects:
+
+| Property | Default path | Format |
+|---|---|---|
+| `app.security.password-policy.common-passwords-file` | `./config/security/common-passwords.txt` | UTF-8, one exact password per line, at least 3,000 distinct entries of 8–72 characters |
+| `app.security.password-policy.breached-password-hashes-file` | `./config/security/breached-password-hashes.txt` | UTF-8, one SHA-1 hex digest per line; an optional `:count` suffix is accepted |
+
+`make install` and `make setup` create small illustrative files at these paths
+when the files are absent. The generated local configuration activates the
+`local` profile and sets `app.security.password-policy.sample-data: true`, so
+`make run` starts and demonstrates both checks on a clean local setup. The
+common-password examples and demonstration hash are not a sourced or licensed
+security corpus; they do not represent meaningful breach coverage. Startup
+logs a warning in this mode. The seed script preserves files already supplied
+by the operator. For a smoke test, the sample denylist blocks `password` and
+the sample hash matches `demo-breach-check-password`; neither example is a
+claim that the value came from an external breach corpus.
+
+Both paths are configurable. The current implementation loads these datasets
+into application memory at startup, so choose a starter/approved subset that
+fits the JVM heap. Its breach-check coverage is only as complete and current as
+the supplied file; a subset is not a claim that every known breach is covered.
+Very large full-corpus deployments need a separately sized disk-backed lookup
+implementation before enabling that corpus.
+
+Update datasets through a reviewed release/deployment process: verify source
+terms and licensing, provenance, freshness, file integrity/checksum, and
+coverage; then restart or roll the application so the new files are loaded.
+Do not put production plaintext breach corpora in the repository, container
+image, logs, or support tickets. Operator-provided denylist files contain
+plaintext passwords and must have restricted read access. The breach file
+contains hashes; it is only for local membership checks and must not be used
+as a password-storage mechanism.
+
+Before using approved datasets, replace the sample files and set
+`app.security.password-policy.sample-data: false`. Production, staging, and
+any profile other than `local`, `dev`, or `test` reject sample mode at startup.
+With sample mode disabled, startup requires at least 3,000 distinct common
+password entries. Production deployments should explicitly activate `prod`,
+`production`, or `staging`, install approved datasets, and verify the resolved
+paths and file permissions.
+
+When required data is absent or invalid, startup stops with an actionable
+`Password policy startup validation failed` message. For example:
+
+```text
+Password policy startup validation failed: Common-password denylist is missing or unreadable at '/srv/javara/config/security/common-passwords.txt'. Provide a UTF-8 file with at least 3,000 distinct passwords and configure app.security.password-policy.common-passwords-file.
+```
+
+Mount or correct the named dataset and restart. Do not disable the control to
+make a production deployment start. Disabling it is allowed only for isolated
+local development or tests; JAVARA rejects that setting when `prod`,
+`production`, or `staging` is active. The test-only override lives in
+`src/test/resources/application.yml`.
+
+When a submitted password matches either dataset, the API responds with
+`400 Bad Request` and asks the user to choose a password that is not common or
+known to be compromised. It does not disclose which list matched or log the
+password.
 
 ### Secrets and accounts
 

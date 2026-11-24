@@ -12,9 +12,12 @@ import java.util.List;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
@@ -42,6 +45,7 @@ import com.elsyah.tech.javara.utils.security.PasswordHashService;
         "app.security.bootstrap-admin.enabled=false"
 })
 @AutoConfigureMockMvc
+@ExtendWith(OutputCaptureExtension.class)
 class SecurityAuthorizationIntegrationTests extends PostgresRedisTestSupport {
     @Autowired
     private MockMvc mockMvc;
@@ -284,18 +288,27 @@ class SecurityAuthorizationIntegrationTests extends PostgresRedisTestSupport {
     }
 
     @Test
-    void userUpdateEndpointCannotChangePassword() throws Exception {
+    void userUpdateEndpointCannotChangePassword(CapturedOutput output) throws Exception {
         UserEntity user = createUser("unchanged-password");
         AuthServiceResult login = authService.login(
                 new LoginRequest(user.getEmail(), "unchanged-password"));
 
-        mockMvc.perform(put("/api/v1/users/" + user.getId())
+        MvcResult result = mockMvc.perform(put("/api/v1/users/" + user.getId())
                         .header("Authorization", "Bearer " + login.accessToken())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"" + user.getEmail()
                                 + "\",\"password\":\"unverified-new-password\","
                                 + "\"isActive\":true}"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andReturn();
+
+        String responseBody = result.getResponse().getContentAsString();
+        org.junit.jupiter.api.Assertions.assertFalse(
+                responseBody.contains("unverified-new-password"));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                responseBody.contains("dedicated password-change endpoint"));
+        org.junit.jupiter.api.Assertions.assertFalse(
+                output.getAll().contains("unverified-new-password"));
 
         assertEquals(HttpStatus.OK, authService.login(
                 new LoginRequest(user.getEmail(), "unchanged-password")).status());

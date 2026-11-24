@@ -34,6 +34,12 @@ make run
 The setup writes runtime settings to `config/application.yml`. That file is
 local, has restricted file permissions, and is ignored by Git. The generated
 configuration binds the API to `127.0.0.1:8080`.
+It also copies illustrative password-policy files into `config/security/`
+without overwriting files already there. These small examples let the local
+API start and demonstrate both checks; they are not a real denylist or breach
+corpus and provide no production coverage. You can edit or replace them, then
+restart the API. See the [password-policy setup](production-and-adoption.md#password-policy-datasets)
+before using approved datasets or deploying.
 
 Check that the API is responding:
 
@@ -65,6 +71,8 @@ The setup asks for the connection details, initial ADMIN account, token
 transport, and application timezone (IANA; default `UTC`). It generates a JWT
 signing key, checks whether the service ports are reachable when `nc` is
 installed, and writes `config/application.yml`.
+It also seeds the same local-only illustrative password-policy files when they
+do not already exist.
 The application verifies the actual database and Redis credentials when it
 starts.
 

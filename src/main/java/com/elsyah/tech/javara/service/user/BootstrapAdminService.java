@@ -14,12 +14,15 @@ import com.elsyah.tech.javara.utils.security.PasswordHashService;
 public class BootstrapAdminService {
     private final UserRepository userRepository;
     private final PasswordHashService passwordHashService;
+    private final PasswordPolicyService passwordPolicyService;
 
     public BootstrapAdminService(
             UserRepository userRepository,
-            PasswordHashService passwordHashService) {
+            PasswordHashService passwordHashService,
+            PasswordPolicyService passwordPolicyService) {
         this.userRepository = userRepository;
         this.passwordHashService = passwordHashService;
+        this.passwordPolicyService = passwordPolicyService;
     }
 
     @Transactional
@@ -31,6 +34,11 @@ public class BootstrapAdminService {
                         "Bootstrap admin email already belongs to a non-admin account");
             }
             return;
+        }
+        if (!passwordPolicyService.isPasswordAllowed(password)) {
+            throw new IllegalStateException(
+                    "Bootstrap administrator password was rejected by the password policy. "
+                            + "Configure a unique password before starting JAVARA.");
         }
 
         UserEntity admin = new UserEntity();

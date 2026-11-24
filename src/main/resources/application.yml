@@ -1,2 +1,7 @@
 app:
   time-zone: UTC
+  security:
+    password-policy:
+      enabled: true
+      common-passwords-file: ./config/security/common-passwords.txt
+      breached-password-hashes-file: ./config/security/breached-password-hashes.txt

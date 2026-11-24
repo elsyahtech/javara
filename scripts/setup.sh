@@ -145,6 +145,8 @@ server:
       - text/plain
     min-response-size: 1KB
 spring:
+  profiles:
+    active: local
   application:
     name: javara-postgres
   lifecycle:
@@ -197,6 +199,11 @@ app:
   security:
     headers:
       enabled: true
+    password-policy:
+      enabled: true
+      sample-data: true
+      common-passwords-file: ./config/security/common-passwords.txt
+      breached-password-hashes-file: ./config/security/breached-password-hashes.txt
     password:
       algorithm: ARGON2
     jwt:
@@ -232,6 +239,8 @@ app:
 EOF
 chmod 600 "$temp_file"
 mv "$temp_file" config/application.yml
+
+bash scripts/seed-password-policy-samples.sh
 
 printf '\n%s\n' "Configuration saved locally to config/application.yml."
 printf '%s\n' "The file is excluded from Git. Run 'make run' to start the API."

@@ -45,6 +45,7 @@ public class UserService {
     private final UserRepository repository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordHashService passwordHashService;
+    private final PasswordPolicyService passwordPolicyService;
     private final Clock clock;
 
     /**
@@ -56,10 +57,12 @@ public class UserService {
             UserRepository repository,
             PasswordHashService passwordHashService,
             RefreshTokenRepository refreshTokenRepository,
+            PasswordPolicyService passwordPolicyService,
             Clock clock) {
         this.repository = repository;
         this.passwordHashService = passwordHashService;
         this.refreshTokenRepository = refreshTokenRepository;
+        this.passwordPolicyService = passwordPolicyService;
         this.clock = clock;
     }
 
@@ -77,6 +80,9 @@ public class UserService {
      */
     @Transactional
     public ServiceResult<UserEntity> createUser(UserRequest request) {
+        if (!passwordPolicyService.isPasswordAllowed(request.password())) {
+            return rejectedPassword();
+        }
         /* Check if the email already exists */
         if (repository.existsByEmail(request.email())) {
             return new ServiceResult<>(null, HttpStatus.CONFLICT, "Email already exists");
@@ -235,6 +241,9 @@ public class UserService {
             return new ServiceResult<>(
                     null, HttpStatus.BAD_REQUEST, "New password must be different");
         }
+        if (!passwordPolicyService.isPasswordAllowed(newPassword)) {
+            return rejectedPassword();
+        }
 
         Instant now = clock.instant();
         user.setPassword(passwordHashService.encode(newPassword));
@@ -311,5 +320,12 @@ public class UserService {
                 null,
                 HttpStatus.UNAUTHORIZED,
                 "Invalid email or password");
+    }
+
+    private static <T> ServiceResult<T> rejectedPassword() {
+        return new ServiceResult<>(
+                null,
+                HttpStatus.BAD_REQUEST,
+                "Choose a password that is not commonly used or known to be compromised");
     }
 }

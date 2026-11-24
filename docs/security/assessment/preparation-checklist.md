@@ -55,6 +55,10 @@ the evidence is meaningful.
 
 ## Needed from operations or the customer deployment owner
 
+- [ ] Mount the approved common-password and breached-password datasets at the
+  configured paths, read-only where possible. Record source, licensing,
+  dataset version, freshness date, integrity checksum, expected coverage, and
+  the owner/process for updating and rolling the application.
 - [ ] Staging deployment topology, runtime/container platform, DNS name, and
   effective configuration. Redact credentials, key material, live tokens, and
   personal data.

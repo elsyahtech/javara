@@ -292,6 +292,8 @@ server:
       - text/plain
     min-response-size: 1KB
 spring:
+  profiles:
+    active: local
   application:
     name: javara-postgres
   lifecycle:
@@ -343,6 +345,11 @@ app:
   security:
     headers:
       enabled: true
+    password-policy:
+      enabled: true
+      sample-data: true
+      common-passwords-file: ./config/security/common-passwords.txt
+      breached-password-hashes-file: ./config/security/breached-password-hashes.txt
     password:
       algorithm: ARGON2
     jwt:
@@ -383,6 +390,7 @@ EOF
 create_local_env
 configure_auth_bootstrap
 write_managed_config
+bash scripts/seed-password-policy-samples.sh
 if command -v nc >/dev/null 2>&1; then
     for port in "$(env_value POSTGRES_PORT)" "$(env_value REDIS_PORT)"; do
         if nc -z -w 1 127.0.0.1 "$port"; then
