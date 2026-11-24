@@ -22,6 +22,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 
 import com.elsyah.tech.javara.entity.user.UserEntity;
 import com.elsyah.tech.javara.request.user.UserRequest;
+import com.elsyah.tech.javara.request.user.UserUpdateRequest;
 import com.elsyah.tech.javara.service.user.UserService;
 import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.testsupport.PostgresRedisTestSupport;
@@ -175,19 +176,21 @@ class UserRepositoryTests extends PostgresRedisTestSupport {
         assertFalse(repository.existsByEmailAndIdNot(email, userId));
     }
 
-    // Verifies that a password update preserves an active status omitted from the request.
+    // Verifies that a profile update preserves status and never changes the password.
     @Test
-    void updatingPasswordWithoutIsActivePreservesActiveStatus() {
+    void updatingProfileWithoutIsActivePreservesActiveStatusAndPassword() {
         String email = "password-update-" + UUID.randomUUID() + "@example.com";
         UUID userId = UUID.randomUUID();
-        repository.saveAndFlush(user(userId, email, null));
+        UserEntity existing = user(userId, email, null);
+        repository.saveAndFlush(existing);
+        String originalPassword = existing.getPassword();
         entityManager.clear();
 
-        var result = userService.updateUser(userId, new UserRequest(email, "newpassword123", null));
+        var result = userService.updateUser(userId, new UserUpdateRequest(email, null));
 
         assertEquals(HttpStatus.OK, result.status());
         assertTrue(result.data().getIsActive());
-        assertTrue(result.data().getPassword().startsWith("{argon2}"));
+        assertEquals(originalPassword, result.data().getPassword());
         assertNotNull(result.data().getUpdatedAt());
     }
 

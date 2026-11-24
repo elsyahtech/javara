@@ -19,6 +19,7 @@ import com.elsyah.tech.javara.projection.user.UserSelectColumn;
 import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
 import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.request.user.UserRequest;
+import com.elsyah.tech.javara.request.user.UserUpdateRequest;
 import com.elsyah.tech.javara.request.auth.LoginRequest;
 import com.elsyah.tech.javara.utils.security.PasswordHashService;
 import com.elsyah.tech.javara.service.common.ServiceResult;
@@ -179,7 +180,13 @@ public class UserService {
      * @return a result containing the updated user or a not-found status and message
      */
     @Transactional
-    public ServiceResult<UserEntity> updateUser(UUID id, UserRequest request) {
+    public ServiceResult<UserEntity> updateUser(UUID id, UserUpdateRequest request) {
+        if (request.password() != null) {
+            return new ServiceResult<>(
+                    null,
+                    HttpStatus.BAD_REQUEST,
+                    "Use the dedicated password-change endpoint");
+        }
         Optional<UserEntity> optionalUser = repository.findByIdForUpdate(id);
         if (optionalUser.isPresent()) {
             UserEntity userEntity = optionalUser.get();
@@ -188,12 +195,9 @@ public class UserService {
                 return new ServiceResult<>(null, HttpStatus.CONFLICT, "Email already exists");
             }
 
-            boolean passwordChanged =
-                    !passwordHashService.matches(request.password(), userEntity.getPassword());
             boolean accountDisabled = Boolean.TRUE.equals(userEntity.getIsActive())
                     && Boolean.FALSE.equals(request.isActive());
             userEntity.setEmail(request.email());
-            userEntity.setPassword(passwordHashService.encode(request.password()));
             if (request.isActive() != null) {
                 userEntity.setIsActive(request.isActive());
             }
@@ -201,13 +205,43 @@ public class UserService {
             userEntity.setUpdatedAt(now);
 
             UserEntity updatedUser = repository.saveAndFlush(userEntity);
-            if (passwordChanged || accountDisabled) {
+            if (accountDisabled) {
                 refreshTokenRepository.revokeActiveTokensForUser(id, now);
             }
             return new ServiceResult<>(updatedUser, HttpStatus.OK, "User updated successfully");
         }
 
         return new ServiceResult<>(null, HttpStatus.NOT_FOUND, "User not found with id: " + id);
+    }
+
+    @Transactional
+    public ServiceResult<Void> changePassword(
+            UUID userId,
+            String currentPassword,
+            String newPassword) {
+        Optional<UserEntity> optionalUser = repository.findByIdForUpdate(userId);
+        if (optionalUser.isEmpty()
+                || !Boolean.TRUE.equals(optionalUser.get().getIsActive())
+                || optionalUser.get().getDeletedAt() != null
+                || currentPassword == null
+                || !passwordHashService.matches(
+                        currentPassword, optionalUser.get().getPassword())) {
+            return new ServiceResult<>(
+                    null, HttpStatus.UNAUTHORIZED, "Re-authentication failed");
+        }
+
+        UserEntity user = optionalUser.get();
+        if (passwordHashService.matches(newPassword, user.getPassword())) {
+            return new ServiceResult<>(
+                    null, HttpStatus.BAD_REQUEST, "New password must be different");
+        }
+
+        Instant now = clock.instant();
+        user.setPassword(passwordHashService.encode(newPassword));
+        user.setUpdatedAt(now);
+        repository.saveAndFlush(user);
+        refreshTokenRepository.revokeActiveTokensForUser(userId, now);
+        return new ServiceResult<>(null, HttpStatus.OK, "Password changed successfully");
     }
 
     /**

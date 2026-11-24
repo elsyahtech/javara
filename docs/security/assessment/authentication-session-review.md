@@ -38,7 +38,7 @@ guides. No production or staging environment was available or assessed.
 ## Remediation progress in the current worktree
 
 The assessment baseline above is historical. The following remediation is
-present in the current, uncommitted worktree and has not yet been independently
+present in the current worktree and has not yet been independently
 re-assessed. The original matrix findings remain baseline findings; no
 requirement is being claimed as `Pass`.
 
@@ -56,19 +56,26 @@ requirement is being claimed as `Pass`.
   client address by default.
 - The API guide documents these defaults, endpoint behavior, migration impact,
   and deployment caveats.
+- Self-service password change now uses
+  `POST /api/v1/auth/password/change`, requires an authenticated USER/ADMIN and
+  the current password, rejects reuse, rate-limits attempts, and revokes all
+  sessions. The legacy user-update DTO no longer accepts a password. Cookie
+  mode clears its authentication cookies after success.
 
-The focused regression command completed successfully with 46 tests,
+The focused regression command completed successfully with 85 tests,
 0 failures, and 0 errors:
 
 ```text
-bash scripts/maven.sh -Dtest=AuthControllerTests,AuthServiceTests,SessionTokenValidatorTests,AccessTokenServiceTests,SecurityAuthorizationIntegrationTests,CookieSecurityIntegrationTests,ServiceClientCredentialsIntegrationTests,AuthRateLimiterTests,AuthRateLimitInterceptorTests,AuthRateLimitWebMvcConfigurationTests test
+bash scripts/maven.sh clean -Dtest=AuthControllerTests,UserServiceTests,UserControllerTests,UserRepositoryTests,AuthRateLimitInterceptorTests,AuthRateLimitWebMvcConfigurationTests,SecurityAuthorizationIntegrationTests,UserConcurrentIntegrationTests test
 ```
 
 This verifies only the tested repository behavior. Database-write cost on every
 authenticated user request has not been load-tested. Token/timeout behavior
-still needs deployment-level verification. Email changes still lack the
-required re-authentication and verification flow, and MFA, password recovery,
-breached-password checks, and registration anti-enumeration remain open.
+still needs deployment-level verification. The self-service password change
+does not yet check a breached-password dataset or top-3000 denylist and does
+not send security notifications. Email changes still lack the required
+re-authentication and verification flow. MFA, password recovery, and
+registration anti-enumeration remain open.
 
 ## Confirmed findings
 

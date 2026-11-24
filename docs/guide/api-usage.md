@@ -50,6 +50,7 @@ For browser cookies and CSRF, see the
 | `POST /api/v1/auth/login` | Public | Returns tokens or sets cookies |
 | `POST /api/v1/auth/refresh` | Public | Rotates a refresh token |
 | `POST /api/v1/auth/logout` | Current refresh token | Revokes that session; cookie mode also requires a CSRF token |
+| `POST /api/v1/auth/password/change` | USER or ADMIN | Requires current password; revokes all sessions and requires signing in again |
 | `GET /api/v1/auth/sessions` | Authenticated USER | Lists the user's active sessions |
 | `POST /api/v1/auth/sessions/{sessionId}/terminate` | Same USER | Requires current password; terminates the selected session |
 | `POST /api/v1/auth/sessions/terminate-all` | Same USER | Requires current password; terminates all sessions |
@@ -59,7 +60,7 @@ For browser cookies and CSRF, see the
 | `POST /api/v1/users` | ADMIN | Creates a USER |
 | `GET /api/v1/users/{id}` | Same USER or ADMIN | Gets a user |
 | `GET /api/v1/users/findUserByIdWithSelectedColumns/{id}` | Same USER or ADMIN | Gets selected fields |
-| `PUT /api/v1/users/{id}` | Same USER or ADMIN | Replaces the mutable fields in the request; password changes still require a dedicated current-password flow |
+| `PUT /api/v1/users/{id}` | Same USER or ADMIN | Updates email and optional active status; cannot change a password |
 | `DELETE /api/v1/users/{id}` | Same USER or ADMIN | Soft-deletes the user |
 
 “Same USER” means the authenticated account ID must match the `{id}` in the
@@ -68,7 +69,7 @@ ADMIN-only.
 
 ## Request and response format
 
-User creation and update expect JSON:
+User creation expects JSON:
 
 ```json
 {
@@ -77,12 +78,32 @@ User creation and update expect JSON:
 }
 ```
 
-The password is required and must be 8–72 characters. On update,
-`isActive` is optional. Public registration always creates an active USER.
-The user-management `PUT` endpoint requires a password as part of the full
-request; it is not a partial-update endpoint. Do not use this endpoint to
-change a user's password: a dedicated current-password change flow is still
-required.
+Passwords must be 8–72 characters. Public registration always creates an
+active USER. The user-management `PUT` endpoint accepts `email` and optional
+`isActive`; including a `password` is rejected. Self-service password changes
+require an authenticated USER or ADMIN session and the current password:
+
+```http
+POST /api/v1/auth/password/change
+Content-Type: application/json
+Authorization: Bearer <access-token>
+```
+
+```json
+{
+  "currentPassword": "current-secret",
+  "newPassword": "new-secret-at-least-8-characters"
+}
+```
+
+After a successful change, all sessions are revoked, including the session
+that submitted the request. Sign in again using the new password. Cookie
+transport also clears the access and refresh cookies. The endpoint shares the
+default re-authentication rate limit of five requests per 15 minutes per
+client address.
+
+An incorrect current password returns `401 Unauthorized`; reusing the current
+password returns `400 Bad Request`.
 
 Responses use an envelope. Successful responses contain fields such as
 `httpCode`, `message`, `success`, and `data`. Errors contain `httpCode`,

@@ -12,7 +12,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.elsyah.tech.javara.entity.auth.RefreshTokenEntity;
-import com.elsyah.tech.javara.entity.user.UserEntity;
 import com.elsyah.tech.javara.middleware.security.SessionProperties;
 import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
 import com.elsyah.tech.javara.repository.user.UserRepository;

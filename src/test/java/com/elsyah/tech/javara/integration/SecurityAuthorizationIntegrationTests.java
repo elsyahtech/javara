@@ -3,6 +3,7 @@ package com.elsyah.tech.javara.integration;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.UUID;
@@ -31,6 +32,7 @@ import com.elsyah.tech.javara.testsupport.PostgresRedisTestSupport;
 import com.elsyah.tech.javara.testsupport.SessionTokenTestSupport;
 import com.elsyah.tech.javara.request.auth.LoginRequest;
 import com.elsyah.tech.javara.request.user.UserRequest;
+import com.elsyah.tech.javara.request.user.UserUpdateRequest;
 import com.elsyah.tech.javara.service.user.UserService;
 import com.elsyah.tech.javara.utils.security.PasswordHashService;
 
@@ -178,7 +180,7 @@ class SecurityAuthorizationIntegrationTests extends PostgresRedisTestSupport {
 
         var updateResult = userService.updateUser(
                 user.getId(),
-                new UserRequest(user.getEmail(), "disable-password", false));
+                new UserUpdateRequest(user.getEmail(), false));
         assertEquals(HttpStatus.OK, updateResult.status());
 
         mockMvc.perform(get("/api/v1/users/" + user.getId())
@@ -244,6 +246,61 @@ class SecurityAuthorizationIntegrationTests extends PostgresRedisTestSupport {
         mockMvc.perform(get("/api/v1/users/" + user.getId())
                         .header("Authorization", "Bearer " + userLogin.accessToken()))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void userMustReauthenticateToChangePasswordAndAllExistingSessionsAreRevoked()
+            throws Exception {
+        UserEntity user = createUser("old-password-123");
+        AuthServiceResult login = authService.login(
+                new LoginRequest(user.getEmail(), "old-password-123"));
+        assertEquals(HttpStatus.OK, login.status());
+
+        mockMvc.perform(post("/api/v1/auth/password/change")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"currentPassword\":\"old-password-123\","
+                                + "\"newPassword\":\"new-password-123\"}"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/auth/password/change")
+                        .header("Authorization", "Bearer " + login.accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"currentPassword\":\"incorrect-password\","
+                                + "\"newPassword\":\"new-password-123\"}"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/auth/password/change")
+                        .header("Authorization", "Bearer " + login.accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"currentPassword\":\"old-password-123\","
+                                + "\"newPassword\":\"new-password-123\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/users/" + user.getId())
+                        .header("Authorization", "Bearer " + login.accessToken()))
+                .andExpect(status().isUnauthorized());
+        assertEquals(HttpStatus.UNAUTHORIZED, authService.login(
+                new LoginRequest(user.getEmail(), "old-password-123")).status());
+        assertEquals(HttpStatus.OK, authService.login(
+                new LoginRequest(user.getEmail(), "new-password-123")).status());
+    }
+
+    @Test
+    void userUpdateEndpointCannotChangePassword() throws Exception {
+        UserEntity user = createUser("unchanged-password");
+        AuthServiceResult login = authService.login(
+                new LoginRequest(user.getEmail(), "unchanged-password"));
+
+        mockMvc.perform(put("/api/v1/users/" + user.getId())
+                        .header("Authorization", "Bearer " + login.accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"" + user.getEmail()
+                                + "\",\"password\":\"unverified-new-password\","
+                                + "\"isActive\":true}"))
+                .andExpect(status().isBadRequest());
+
+        assertEquals(HttpStatus.OK, authService.login(
+                new LoginRequest(user.getEmail(), "unchanged-password")).status());
+        assertEquals(HttpStatus.UNAUTHORIZED, authService.login(
+                new LoginRequest(user.getEmail(), "unverified-new-password")).status());
     }
 
     private UserEntity createUser(String password) {

@@ -18,6 +18,7 @@ public class AuthRateLimitInterceptor implements HandlerInterceptor {
     private static final String LOGIN_PATH = "/api/v1/auth/login";
     private static final String REGISTER_PATH = "/api/v1/auth/register";
     private static final String REFRESH_PATH = "/api/v1/auth/refresh";
+    private static final String PASSWORD_CHANGE_PATH = "/api/v1/auth/password/change";
     private static final String SESSION_PATH_PREFIX = "/api/v1/auth/sessions/";
     private static final String SESSION_TERMINATE_ALL_PATH =
             "/api/v1/auth/sessions/terminate-all";
@@ -63,6 +64,7 @@ public class AuthRateLimitInterceptor implements HandlerInterceptor {
             case LOGIN_PATH -> loginProperties;
             case REGISTER_PATH -> registerProperties;
             case REFRESH_PATH -> refreshProperties;
+            case PASSWORD_CHANGE_PATH -> sessionReauthProperties;
             default -> isSessionReauthenticationPath(path)
                     ? sessionReauthProperties
                     : null;

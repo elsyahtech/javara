@@ -27,6 +27,7 @@ import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
 import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.request.auth.LoginRequest;
 import com.elsyah.tech.javara.request.user.UserRequest;
+import com.elsyah.tech.javara.request.user.UserUpdateRequest;
 import com.elsyah.tech.javara.service.auth.AuthService;
 import com.elsyah.tech.javara.service.auth.AuthServiceResult;
 import com.elsyah.tech.javara.service.common.ServiceResult;
@@ -141,10 +142,10 @@ class UserConcurrentIntegrationTests extends PostgresRedisTestSupport {
 
         Callable<HttpStatus> firstUpdate = () -> userService.updateUser(
                 user.getId(),
-                new UserRequest(user.getEmail(), "password-one", true)).status();
+                new UserUpdateRequest(user.getEmail(), false)).status();
         Callable<HttpStatus> secondUpdate = () -> userService.updateUser(
                 user.getId(),
-                new UserRequest(user.getEmail(), "password-two", true)).status();
+                new UserUpdateRequest(user.getEmail(), true)).status();
 
         List<Future<HttpStatus>> futures = executor.invokeAll(
                 List.of(firstUpdate, secondUpdate))
@@ -155,10 +156,7 @@ class UserConcurrentIntegrationTests extends PostgresRedisTestSupport {
         assertThat(futures.stream().map(this::getFutureStatus).toList())
                 .allMatch(status -> status == HttpStatus.OK);
 
-        UserEntity updated = repository.findById(user.getId()).orElseThrow();
-        assertThat(passwordHashService.matches("password-one", updated.getPassword())
-                || passwordHashService.matches("password-two", updated.getPassword()))
-                .isTrue();
+        assertThat(repository.findById(user.getId()).orElseThrow().getIsActive()).isNotNull();
     }
 
     @Test
@@ -173,9 +171,10 @@ class UserConcurrentIntegrationTests extends PostgresRedisTestSupport {
         assertThat(refreshTokenRepository.findByUserIdAndRevokedAtIsNull(
                 created.data().getId())).hasSize(1);
 
-        ServiceResult<UserEntity> updated = userService.updateUser(
+        ServiceResult<Void> updated = userService.changePassword(
                 created.data().getId(),
-                new UserRequest(email, "new-password-123", true));
+                "old-password-123",
+                "new-password-123");
 
         assertThat(updated.status()).isEqualTo(HttpStatus.OK);
         assertThat(refreshTokenRepository.findByUserIdAndRevokedAtIsNull(
@@ -199,9 +198,10 @@ class UserConcurrentIntegrationTests extends PostgresRedisTestSupport {
         });
         Future<HttpStatus> update = executor.submit(() -> {
             start.await();
-            return userService.updateUser(
+            return userService.changePassword(
                     user.getId(),
-                    new UserRequest(email, "new-password-123", true)).status();
+                "old-password-123",
+                "new-password-123").status();
         });
         start.countDown();
 
@@ -260,7 +260,7 @@ class UserConcurrentIntegrationTests extends PostgresRedisTestSupport {
 
         Callable<HttpStatus> update = () -> userService.updateUser(
                 user.getId(),
-                new UserRequest(user.getEmail(), "updated-password", true)).status();
+                new UserUpdateRequest(user.getEmail(), true)).status();
         Callable<HttpStatus> delete = () -> userService.deleteUser(user.getId()).status();
 
         List<Future<HttpStatus>> futures = executor.invokeAll(

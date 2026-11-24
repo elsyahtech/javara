@@ -1,6 +1,7 @@
 package com.elsyah.tech.javara.controller.auth;
 
 import java.time.Duration;
+import java.util.UUID;
 
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
@@ -10,6 +11,9 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,6 +25,7 @@ import com.elsyah.tech.javara.entity.user.UserEntity;
 import com.elsyah.tech.javara.middleware.security.JwtProperties;
 import com.elsyah.tech.javara.middleware.security.TokenTransport;
 import com.elsyah.tech.javara.request.auth.LoginRequest;
+import com.elsyah.tech.javara.request.auth.PasswordChangeRequest;
 import com.elsyah.tech.javara.request.auth.RefreshTokenRequest;
 import com.elsyah.tech.javara.request.auth.RegisterRequest;
 import com.elsyah.tech.javara.request.user.UserRequest;
@@ -112,6 +117,28 @@ public class AuthController {
             return response.body(ApiResponse.failure(status, "Refresh token is invalid"));
         }
         return response.body(ApiResponse.success(HttpStatus.OK, "Logout successful", null));
+    }
+
+    @PostMapping("/password/change")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<Void>> changePassword(
+            @AuthenticationPrincipal Jwt principal,
+            @Valid @RequestBody PasswordChangeRequest request) {
+        ServiceResult<Void> result = userService.changePassword(
+                UUID.fromString(principal.getSubject()),
+                request.currentPassword(),
+                request.newPassword());
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(result.status());
+        if (result.isError()) {
+            return response.body(ApiResponse.failure(result.status(), result.message()));
+        }
+        if (jwtProperties.transport() == TokenTransport.COOKIE) {
+            response.header(HttpHeaders.SET_COOKIE, clearCookie(
+                    jwtProperties.accessCookieName(), "/", Duration.ZERO).toString());
+            response.header(HttpHeaders.SET_COOKIE, clearCookie(
+                    jwtProperties.refreshCookieName(), "/api/v1/auth", Duration.ZERO).toString());
+        }
+        return response.body(ApiResponse.success(result.status(), result.message(), null));
     }
 
     @GetMapping("/csrf")

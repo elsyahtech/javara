@@ -37,6 +37,7 @@ class AuthRateLimitWebMvcConfigurationTests {
                         "/api/v1/auth/login",
                         "/api/v1/auth/register",
                         "/api/v1/auth/refresh",
+                        "/api/v1/auth/password/change",
                         "/api/v1/auth/sessions/*/terminate",
                         "/api/v1/auth/sessions/terminate-all",
                         "/api/v1/admin/users/*/sessions/terminate"

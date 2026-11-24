@@ -22,6 +22,7 @@ import org.springframework.data.domain.PageRequest;
 
 import com.elsyah.tech.javara.service.user.UserService;
 import com.elsyah.tech.javara.request.user.UserRequest;
+import com.elsyah.tech.javara.request.user.UserUpdateRequest;
 import com.elsyah.tech.javara.response.common.ApiResponse;
 import com.elsyah.tech.javara.response.user.UserResponse;
 import com.elsyah.tech.javara.entity.user.UserEntity;
@@ -208,20 +209,20 @@ public class UserController {
      * Updates an existing user by their ID.
      *
      * @param id the ID of the user to update
-     * @param request the UserRequest containing updated user details
+     * @param request the UserUpdateRequest containing mutable profile details
      * @return a wrapped response containing the service status, message, and updated user
      * 
      * CURL Command:
      * curl -X PUT http://localhost:8080/api/v1/users/{id} \
      *      -H "Content-Type: application/json" \
-     *      -d '{"email": "newemail@example.com", "password": "newpassword", "isActive": true}'
+     *      -d '{"email": "newemail@example.com", "isActive": true}'
      * 
      */
     @PutMapping("/{id:[0-9a-fA-F-]+}")
     @PreAuthorize("hasRole('ADMIN') or #p0.toString() == authentication.name")
     public ResponseEntity<ApiResponse<UserResponse>> updateUser(
             @PathVariable UUID id,
-            @Valid @RequestBody UserRequest request
+            @Valid @RequestBody UserUpdateRequest request
         ) {
         ServiceResult<UserEntity> result = service.updateUser(id, request);
         HttpStatus status = result.status();

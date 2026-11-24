@@ -31,6 +31,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import com.elsyah.tech.javara.entity.user.UserEntity;
 import com.elsyah.tech.javara.projection.user.UserSelectColumn;
 import com.elsyah.tech.javara.request.user.UserRequest;
+import com.elsyah.tech.javara.request.user.UserUpdateRequest;
 import com.elsyah.tech.javara.response.common.ApiResponse;
 import com.elsyah.tech.javara.service.common.ServiceResult;
 import com.elsyah.tech.javara.response.user.UserResponse;
@@ -315,7 +316,7 @@ class UserControllerTests {
     @Test
     void updateUserReturnsWrappedResponseUsingServiceStatusAndMessage() {
         UserService service = mock(UserService.class);
-        UserRequest request = new UserRequest("updated@example.com", "newpassword", false);
+        UserUpdateRequest request = new UserUpdateRequest("updated@example.com", false);
         UserEntity user = user(uuid("user-1"), "updated@example.com", false);
         when(service.updateUser(uuid("user-1"), request)).thenReturn(
                 new ServiceResult<>(user, HttpStatus.OK, "User updated successfully"));
@@ -337,7 +338,7 @@ class UserControllerTests {
     @Test
     void updateUserReturnsWrappedNotFoundUsingServiceStatusAndMessage() {
         UserService service = mock(UserService.class);
-        UserRequest request = new UserRequest("updated@example.com", "newpassword", false);
+        UserUpdateRequest request = new UserUpdateRequest("updated@example.com", false);
         when(service.updateUser(uuid("missing-id"), request)).thenReturn(
                 new ServiceResult<>(null, HttpStatus.NOT_FOUND, "User not found with id: missing-id"));
 

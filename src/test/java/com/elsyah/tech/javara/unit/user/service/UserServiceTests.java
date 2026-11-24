@@ -37,6 +37,7 @@ import com.elsyah.tech.javara.projection.user.UserSelectColumn;
 import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
 import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.request.user.UserRequest;
+import com.elsyah.tech.javara.request.user.UserUpdateRequest;
 import com.elsyah.tech.javara.request.auth.LoginRequest;
 import com.elsyah.tech.javara.service.user.UserService;
 import com.elsyah.tech.javara.service.common.ServiceResult;
@@ -240,23 +241,25 @@ class UserServiceTests {
         RefreshTokenRepository refreshTokenRepository = mock(RefreshTokenRepository.class);
         UserEntity user = new UserEntity();
         user.setEmail("old@example.com");
-        user.setPassword("oldpassword");
+        PasswordHashService passwordHashService = new PasswordHashService();
+        user.setPassword(passwordHashService.encode("oldpassword"));
         user.setIsActive(true);
-        UserRequest request = new UserRequest("new@example.com", "newpassword", false);
+        UserUpdateRequest request = new UserUpdateRequest("new@example.com", false);
         when(repository.findByIdForUpdate(uuid("user-1"))).thenReturn(Optional.of(user));
         when(repository.existsByEmailAndIdNot("new@example.com", uuid("user-1"))).thenReturn(false);
         when(repository.saveAndFlush(user)).thenReturn(user);
 
         ServiceResult<UserEntity> result = new UserService(
                 repository,
-                new PasswordHashService(),
+                passwordHashService,
                 refreshTokenRepository,
                 Clock.fixed(NOW, ZoneOffset.UTC)).updateUser(uuid("user-1"), request);
 
         assertSame(user, result.data());
         assertEquals(HttpStatus.OK, result.status());
         assertEquals("new@example.com", user.getEmail());
-        assertTrue(new PasswordHashService().matches("newpassword", user.getPassword()));
+        assertTrue(passwordHashService.matches("oldpassword", user.getPassword()));
+        assertFalse(passwordHashService.matches("newpassword", user.getPassword()));
         assertFalse(user.getIsActive());
         assertEquals(NOW, user.getUpdatedAt());
         verify(repository).saveAndFlush(user);
@@ -271,7 +274,7 @@ class UserServiceTests {
         UserEntity user = new UserEntity();
         user.setId(uuid("user-1"));
         user.setEmail("old@example.com");
-        UserRequest request = new UserRequest("taken@example.com", "newpassword", true);
+        UserUpdateRequest request = new UserUpdateRequest("taken@example.com", true);
         when(repository.findByIdForUpdate(uuid("user-1"))).thenReturn(Optional.of(user));
         when(repository.existsByEmailAndIdNot("taken@example.com", uuid("user-1"))).thenReturn(true);
 
@@ -293,7 +296,7 @@ class UserServiceTests {
         user.setEmail("current@example.com");
         user.setPassword("oldpassword");
         user.setIsActive(true);
-        UserRequest request = new UserRequest("current@example.com", "newpassword", null);
+        UserUpdateRequest request = new UserUpdateRequest("current@example.com", null);
         when(repository.findByIdForUpdate(uuid("user-1"))).thenReturn(Optional.of(user));
         when(repository.existsByEmailAndIdNot("current@example.com", uuid("user-1"))).thenReturn(false);
         when(repository.saveAndFlush(user)).thenReturn(user);
@@ -303,7 +306,7 @@ class UserServiceTests {
         assertSame(user, result.data());
         assertEquals(HttpStatus.OK, result.status());
         assertEquals("current@example.com", user.getEmail());
-        assertTrue(new PasswordHashService().matches("newpassword", user.getPassword()));
+        assertEquals("oldpassword", user.getPassword());
         assertTrue(user.getIsActive());
         assertEquals(NOW, user.getUpdatedAt());
         verify(repository).existsByEmailAndIdNot("current@example.com", uuid("user-1"));
@@ -311,7 +314,7 @@ class UserServiceTests {
     }
 
     @Test
-    void updateWithSamePasswordDoesNotRevokeRefreshTokens() {
+    void profileUpdateDoesNotChangePasswordOrRevokeSessions() {
         UserRepository repository = mock(UserRepository.class);
         RefreshTokenRepository refreshTokenRepository = mock(RefreshTokenRepository.class);
         PasswordHashService passwordHashService = new PasswordHashService();
@@ -320,7 +323,7 @@ class UserServiceTests {
         user.setEmail("current@example.com");
         user.setPassword(passwordHashService.encode("samepassword"));
         user.setIsActive(true);
-        UserRequest request = new UserRequest("current@example.com", "samepassword", true);
+        UserUpdateRequest request = new UserUpdateRequest("current@example.com", true);
         when(repository.findByIdForUpdate(uuid("user-1"))).thenReturn(Optional.of(user));
         when(repository.existsByEmailAndIdNot("current@example.com", uuid("user-1"))).thenReturn(false);
         when(repository.saveAndFlush(user)).thenReturn(user);
@@ -332,7 +335,81 @@ class UserServiceTests {
                 Clock.fixed(NOW, ZoneOffset.UTC)).updateUser(uuid("user-1"), request);
 
         assertEquals(HttpStatus.OK, result.status());
+        assertTrue(passwordHashService.matches("samepassword", user.getPassword()));
         verify(refreshTokenRepository, never()).revokeActiveTokensForUser(any(), any());
+    }
+
+    @Test
+    void changePasswordRequiresCurrentPasswordAndRevokesSessions() {
+        UserRepository repository = mock(UserRepository.class);
+        RefreshTokenRepository refreshTokenRepository = mock(RefreshTokenRepository.class);
+        PasswordHashService passwordHashService = new PasswordHashService();
+        UserEntity user = new UserEntity();
+        user.setId(uuid("user-1"));
+        user.setPassword(passwordHashService.encode("current-password"));
+        user.setIsActive(true);
+        when(repository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+        when(repository.saveAndFlush(user)).thenReturn(user);
+
+        UserService service = new UserService(
+                repository,
+                passwordHashService,
+                refreshTokenRepository,
+                Clock.fixed(NOW, ZoneOffset.UTC));
+        ServiceResult<Void> result =
+                service.changePassword(user.getId(), "current-password", "new-password-123");
+
+        assertEquals(HttpStatus.OK, result.status());
+        assertTrue(passwordHashService.matches("new-password-123", user.getPassword()));
+        assertEquals(NOW, user.getUpdatedAt());
+        verify(refreshTokenRepository).revokeActiveTokensForUser(user.getId(), NOW);
+    }
+
+    @Test
+    void changePasswordRejectsIncorrectCurrentPasswordWithoutMutation() {
+        UserRepository repository = mock(UserRepository.class);
+        RefreshTokenRepository refreshTokenRepository = mock(RefreshTokenRepository.class);
+        PasswordHashService passwordHashService = new PasswordHashService();
+        UserEntity user = new UserEntity();
+        user.setId(uuid("user-1"));
+        user.setPassword(passwordHashService.encode("current-password"));
+        user.setIsActive(true);
+        when(repository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+
+        ServiceResult<Void> result = new UserService(
+                repository,
+                passwordHashService,
+                refreshTokenRepository,
+                Clock.fixed(NOW, ZoneOffset.UTC))
+                .changePassword(user.getId(), "incorrect-password", "new-password-123");
+
+        assertEquals(HttpStatus.UNAUTHORIZED, result.status());
+        assertTrue(passwordHashService.matches("current-password", user.getPassword()));
+        verify(repository, never()).saveAndFlush(any());
+        verifyNoInteractions(refreshTokenRepository);
+    }
+
+    @Test
+    void changePasswordRejectsReusingCurrentPassword() {
+        UserRepository repository = mock(UserRepository.class);
+        RefreshTokenRepository refreshTokenRepository = mock(RefreshTokenRepository.class);
+        PasswordHashService passwordHashService = new PasswordHashService();
+        UserEntity user = new UserEntity();
+        user.setId(uuid("user-1"));
+        user.setPassword(passwordHashService.encode("current-password"));
+        user.setIsActive(true);
+        when(repository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+
+        ServiceResult<Void> result = new UserService(
+                repository,
+                passwordHashService,
+                refreshTokenRepository,
+                Clock.fixed(NOW, ZoneOffset.UTC))
+                .changePassword(user.getId(), "current-password", "current-password");
+
+        assertEquals(HttpStatus.BAD_REQUEST, result.status());
+        verify(repository, never()).saveAndFlush(any());
+        verifyNoInteractions(refreshTokenRepository);
     }
 
     // Verifies that updating a missing user returns not-found without saving.
@@ -342,11 +419,25 @@ class UserServiceTests {
         when(repository.findByIdForUpdate(uuid("missing-id"))).thenReturn(Optional.empty());
 
         ServiceResult<UserEntity> result =
-                newService(repository).updateUser(uuid("missing-id"), null);
+                newService(repository).updateUser(
+                        uuid("missing-id"), new UserUpdateRequest("user@example.com", true));
 
         assertEquals(HttpStatus.NOT_FOUND, result.status());
         assertEquals("User not found with id: " + uuid("missing-id"), result.message());
         verify(repository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void updateUserRejectsPasswordChange() {
+        UserRepository repository = mock(UserRepository.class);
+
+        ServiceResult<UserEntity> result = newService(repository).updateUser(
+                uuid("user-1"),
+                new UserUpdateRequest("user@example.com", true, "unverified-password"));
+
+        assertEquals(HttpStatus.BAD_REQUEST, result.status());
+        assertEquals("Use the dedicated password-change endpoint", result.message());
+        verifyNoInteractions(repository);
     }
 
     // Verifies that deletion sets the soft-delete timestamp and saves the user.

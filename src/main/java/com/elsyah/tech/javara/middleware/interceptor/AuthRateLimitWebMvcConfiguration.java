@@ -24,6 +24,7 @@ public class AuthRateLimitWebMvcConfiguration implements WebMvcConfigurer {
     private static final String LOGIN_PATH = "/api/v1/auth/login";
     private static final String REGISTER_PATH = "/api/v1/auth/register";
     private static final String REFRESH_PATH = "/api/v1/auth/refresh";
+    private static final String PASSWORD_CHANGE_PATH = "/api/v1/auth/password/change";
     private static final String SESSION_TERMINATE_PATH =
             "/api/v1/auth/sessions/*/terminate";
     private static final String SESSION_TERMINATE_ALL_PATH =
@@ -52,7 +53,7 @@ public class AuthRateLimitWebMvcConfiguration implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        List<String> paths = new ArrayList<>(6);
+        List<String> paths = new ArrayList<>(7);
         if (loginProperties.enabled()) {
             paths.add(LOGIN_PATH);
         }
@@ -63,6 +64,7 @@ public class AuthRateLimitWebMvcConfiguration implements WebMvcConfigurer {
             paths.add(REFRESH_PATH);
         }
         if (sessionReauthProperties.enabled()) {
+            paths.add(PASSWORD_CHANGE_PATH);
             paths.add(SESSION_TERMINATE_PATH);
             paths.add(SESSION_TERMINATE_ALL_PATH);
             paths.add(ADMIN_SESSION_TERMINATE_PATH);

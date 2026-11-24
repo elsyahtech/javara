@@ -17,6 +17,7 @@ import java.time.Duration;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import java.util.Base64;
+import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
@@ -24,6 +25,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -32,6 +34,7 @@ import com.elsyah.tech.javara.entity.user.UserEntity;
 import com.elsyah.tech.javara.middleware.security.JwtProperties;
 import com.elsyah.tech.javara.middleware.security.TokenTransport;
 import com.elsyah.tech.javara.request.auth.LoginRequest;
+import com.elsyah.tech.javara.request.auth.PasswordChangeRequest;
 import com.elsyah.tech.javara.request.auth.RegisterRequest;
 import com.elsyah.tech.javara.request.user.UserRequest;
 import com.elsyah.tech.javara.response.common.ApiResponse;
@@ -207,6 +210,58 @@ class AuthControllerTests {
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         verify(authService).logout("refresh-token");
+    }
+
+    @Test
+    void passwordChangeUsesAuthenticatedSubjectAndCurrentPassword() {
+        UserService userService = mock(UserService.class);
+        UUID userId = UUID.randomUUID();
+        Jwt principal = Jwt.withTokenValue("access-token")
+                .header("alg", "none")
+                .subject(userId.toString())
+                .build();
+        PasswordChangeRequest request =
+                new PasswordChangeRequest("current-password", "new-password-123");
+        when(userService.changePassword(userId, "current-password", "new-password-123"))
+                .thenReturn(new ServiceResult<>(
+                        null, HttpStatus.OK, "Password changed successfully"));
+
+        ResponseEntity<ApiResponse<Void>> response = new AuthController(
+                userService,
+                mock(AuthService.class),
+                jwtProperties(TokenTransport.BEARER))
+                .changePassword(principal, request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertTrue(response.getBody().isSuccess());
+        assertEquals("Password changed successfully", response.getBody().getMessage());
+        verify(userService).changePassword(userId, "current-password", "new-password-123");
+    }
+
+    @Test
+    void successfulCookiePasswordChangeClearsAuthenticationCookies() {
+        UserService userService = mock(UserService.class);
+        UUID userId = UUID.randomUUID();
+        Jwt principal = Jwt.withTokenValue("access-token")
+                .header("alg", "none")
+                .subject(userId.toString())
+                .build();
+        when(userService.changePassword(userId, "current-password", "new-password-123"))
+                .thenReturn(new ServiceResult<>(
+                        null, HttpStatus.OK, "Password changed successfully"));
+
+        ResponseEntity<ApiResponse<Void>> response = new AuthController(
+                userService,
+                mock(AuthService.class),
+                jwtProperties(TokenTransport.COOKIE))
+                .changePassword(
+                        principal,
+                        new PasswordChangeRequest("current-password", "new-password-123"));
+
+        assertEquals(2, response.getHeaders().get(HttpHeaders.SET_COOKIE).size());
+        assertTrue(response.getHeaders().get(HttpHeaders.SET_COOKIE).stream()
+                .allMatch(cookie -> cookie.contains("Max-Age=0")));
     }
 
     private static UserEntity user(String id) {
