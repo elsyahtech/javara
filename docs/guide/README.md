@@ -19,6 +19,8 @@ create temporary development services with Docker.
 6. [Production and business adoption](production-and-adoption.md) — check
    whether the current feature set fits your use case and what must be added
    before production.
+7. [Optional database backups](getting-started.md#optional-database-backups) —
+   configure scheduled database dumps and expired refresh-token cleanup.
 
 ## Who this guide is for
 

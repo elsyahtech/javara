@@ -126,32 +126,94 @@ Never point tests at a database containing data you need.
 Backups are an infrastructure task outside the JAVARA runtime. Run
 `make backup-setup` and answer the prompts to choose the PostgreSQL connection,
 dump format (`custom` or `plain`), destination (encrypted filesystem, S3, or
-both), schedule, backup retention, and expired-token grace period. For S3,
-configure AWS credentials separately using an AWS profile or the standard AWS
-credential chain. Enter the same database used by the running JAVARA instance:
+both), schedule, backup retention (default 30 days), and expired-token grace
+period (default 7 days). For S3, configure AWS credentials separately using an
+AWS profile or the standard AWS credential chain. Enter the same database used
+by the running JAVARA instance:
 cleanup runs against the database selected here. The setup checks the database
-schema and destination before installing the scheduler. Connection settings
-are stored in the Git-ignored `config/backup.env` with file mode `600`.
+schema and S3 bucket access before installing the scheduler; it does not create
+or verify a full backup during setup. Connection settings are stored in the
+Git-ignored `config/backup.env` with file mode `600`.
 
-The default scheduler is the current operating system user's cron. The schedule
-uses the host's timezone. Choose `external` if your deployment manages jobs
-elsewhere, then register this command with that scheduler:
+The filesystem destination must be an absolute path outside the repository on
+encrypted storage. For S3, the bucket must already exist and the credentials
+must allow the required bucket check and backup operations. The optional
+endpoint field supports S3-compatible services; non-local endpoints must use
+HTTPS. Choose AES256 encryption or confirm that the bucket enforces encryption.
+
+The setup checks for PostgreSQL client tools (`pg_dump`, `psql`, and
+`pg_restore` for custom-format dumps) and offers to install them if missing.
+On macOS it uses Homebrew `libpq`; on supported Linux distributions it uses
+the system package manager and may ask for administrator permission. For S3
+destinations it similarly offers to install AWS CLI. If `crontab` is missing
+on supported Linux distributions and cron scheduling is selected, setup offers
+to install the cron package; make sure the system cron service is running.
+`pg_dump` must be the same major version as, or newer than, the PostgreSQL
+server. If automatic installation is unavailable for your OS, install the
+tools manually and rerun the setup.
+
+The default scheduler is the current operating system user's cron. Its default
+schedule is daily at 02:00 in the host's timezone, not the application's
+configured timezone. The machine must be running at the scheduled time; on
+Linux, ensure the cron service is active. Setup installs the schedule only
+after validation and does not run a backup immediately. Keep the repository at
+the same path while the cron entry is installed. Scheduled output is appended
+to `config/backup.log`; inspect the installed entry with `crontab -l`.
+
+Choose `external` if your deployment manages jobs elsewhere, then register
+this command with that scheduler:
 
 ```bash
 /bin/bash /path/to/javara/scripts/backup-run.sh --scheduled
 ```
 
-`make backup-run` performs the same operation once. A backup is verified at
-every selected destination before expired refresh tokens are deleted; a failed
-dump or publish skips cleanup. The configured grace period retains expired
-tokens temporarily for replay detection.
+Use `make backup-run` to run the same operation immediately; its output is
+printed to the terminal. The job creates a full `pg_dump` of the selected
+database, verifies the dump and every selected destination, then prunes backup
+files older than the configured backup retention. Only after successful
+verification does it delete expired refresh tokens that are past the configured
+grace period. A failed dump or publish skips cleanup. Cleanup is batched to
+avoid holding locks on the whole table. Start with a manual run and check its
+result before relying on the schedule.
 
 The backup is a `pg_dump` of the JAVARA database, not PostgreSQL cluster-wide
-roles or server settings. Custom dumps can be restored with `pg_restore`;
-plain SQL dumps can be restored with `psql`. Test restores regularly and
-protect database dumps as sensitive data. `make backup-disable` removes only
-the cron job managed by JAVARA; it leaves the config and existing backups in
-place. Disable externally managed jobs in their own scheduler.
+roles or server settings. Protect database dumps as sensitive data and test
+restores regularly. To verify a local backup checksum, run the matching command
+from the backup directory:
+
+```bash
+shasum -a 256 -c "$BACKUP_FILE.sha256" # macOS
+sha256sum -c "$BACKUP_FILE.sha256"    # Linux
+```
+
+Set `BACKUP_FILE` to the dump filename first. Restore into a new, empty
+database rather than overwriting production data. If the backup is in S3,
+download both the dump and its checksum file first. Configure the normal
+PostgreSQL connection environment (`PGHOST`, `PGPORT`, `PGUSER`) for the target
+server before restoring; PostgreSQL can prompt for a password or use a
+protected `.pgpass` file. For a custom dump:
+
+```bash
+createdb javara_restore
+pg_restore --dbname=javara_restore --no-owner --no-privileges "$BACKUP_FILE"
+```
+
+For a plain SQL dump:
+
+```bash
+createdb javara_restore
+psql --no-psqlrc --set ON_ERROR_STOP=1 \
+  --dbname=javara_restore --file="$BACKUP_FILE"
+```
+
+The custom-dump example omits ownership and grants for a portable test restore.
+The plain SQL dump can contain ownership and grant statements, so the referenced
+roles must exist before restoring it. For full recovery, recreate the required
+PostgreSQL roles and other cluster-level settings separately; a
+single-database `pg_dump` does not contain them.
+`make backup-disable` removes only the cron job managed by JAVARA; it leaves
+the config and existing backups in place. Disable externally managed jobs in
+their own scheduler.
 
 If startup fails, check the message first. A missing signing key or stale local
 configuration can usually be fixed by reviewing `config/application.yml` or

@@ -74,7 +74,7 @@ public class UserService {
      * @param request the UserRequest containing user details
      * @return a result containing the created user or a conflict status and message
      */
-    @Transactional (readOnly = false)
+    @Transactional
     public ServiceResult<UserEntity> createUser(UserRequest request) {
         /* Check if the email already exists */
         if (repository.existsByEmail(request.email())) {
@@ -178,7 +178,7 @@ public class UserService {
      * @param request the UserRequest object containing the updated user data
      * @return a result containing the updated user or a not-found status and message
      */
-    @Transactional (readOnly = false)
+    @Transactional
     public ServiceResult<UserEntity> updateUser(UUID id, UserRequest request) {
         Optional<UserEntity> optionalUser = repository.findByIdForUpdate(id);
         if (optionalUser.isPresent()) {
@@ -220,7 +220,7 @@ public class UserService {
      * @param id the ID of the user to delete
      * @return a result containing the operation status and message
      */
-    @Transactional (readOnly = false)
+    @Transactional
     public ServiceResult<UserEntity> deleteUser(UUID id) {
         Optional<UserEntity> optionalUser = repository.findByIdForUpdate(id);
         if (optionalUser.isPresent()) {

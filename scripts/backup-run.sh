@@ -6,6 +6,13 @@ CONFIG_FILE="${JAVARA_BACKUP_CONFIG:-$ROOT_DIR/config/backup.env}"
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 umask 077
 
+if [[ "$(uname -s)" == "Darwin" ]] && command -v brew >/dev/null 2>&1; then
+    libpq_bin="$(brew --prefix libpq 2>/dev/null || true)"
+    if [[ -x "$libpq_bin/bin/pg_dump" ]]; then
+        export PATH="$libpq_bin/bin:$PATH"
+    fi
+fi
+
 if [[ "${1:-}" == "--scheduled" ]]; then
     mkdir -p "$ROOT_DIR/config"
     if [[ -L "$ROOT_DIR/config/backup.log" ]]; then

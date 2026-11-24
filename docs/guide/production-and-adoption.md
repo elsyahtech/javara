@@ -69,7 +69,9 @@ add and test that control before exposing the service.
 ### Data and operations
 
 - Use managed PostgreSQL and Redis with authentication, encryption, backups,
-  monitoring, and tested restore procedures.
+  monitoring, and tested restore procedures. JAVARA's optional database
+  backup commands are described in the [getting-started guide](getting-started.md#optional-database-backups);
+  they back up one database and do not replace provider-level recovery plans.
 - Review every Flyway migration against a production-like copy before release.
 - Add health checks, metrics, structured logs, alerting, and request tracing.
 - Define retention and privacy policies for user and refresh-token data.

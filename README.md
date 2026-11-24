@@ -818,7 +818,8 @@ Additional production work is required before handling real accounts or sensitiv
 4. Add structured logging and request tracing.
 5. Add health checks and metrics.
 6. Add HTTPS/TLS at the gateway or reverse proxy.
-7. Add backup and restore procedures.
+7. Configure and regularly test database backup and restore procedures. See
+   the [optional JAVARA backup guide](docs/guide/getting-started.md#optional-database-backups).
 8. Add database connection-pool monitoring.
 9. Add CI/CD database migration checks.
 10. Add load and concurrent integration tests to CI.

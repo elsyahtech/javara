@@ -80,6 +80,185 @@ validate_s3_uri() {
     }
 }
 
+run_as_admin() {
+    if (( EUID == 0 )); then
+        "$@"
+    elif command -v sudo >/dev/null 2>&1; then
+        sudo "$@"
+    else
+        printf '%s\n' "Administrator privileges are required to install system packages; sudo was not found." >&2
+        exit 1
+    fi
+}
+
+install_linux_package() {
+    local description=$1 apt_package=$2 rpm_package=$3 arch_package=$4 suse_package=$5 alpine_package=$6
+    local distro manager package
+
+    if [[ ! -r /etc/os-release ]]; then
+        printf '%s\n' "Cannot identify this Linux distribution. Install $description manually." >&2
+        exit 1
+    fi
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    distro="${ID:-} ${ID_LIKE:-}"
+
+    case "$distro" in
+        *debian*|*ubuntu*)
+            manager="apt-get"
+            package="$apt_package"
+            ;;
+        *fedora*|*rhel*|*centos*|*rocky*|*almalinux*|*amzn*)
+            if command -v dnf >/dev/null 2>&1; then
+                manager="dnf"
+            elif command -v yum >/dev/null 2>&1; then
+                manager="yum"
+            else
+                printf '%s\n' "Neither dnf nor yum is available. Install $description manually." >&2
+                exit 1
+            fi
+            package="$rpm_package"
+            ;;
+        *arch*)
+            manager="pacman"
+            package="$arch_package"
+            ;;
+        *opensuse*|*suse*)
+            manager="zypper"
+            package="$suse_package"
+            ;;
+        *alpine*)
+            manager="apk"
+            package="$alpine_package"
+            ;;
+        *)
+            printf 'Automatic installation is not configured for Linux distribution "%s". Install %s manually.\n' \
+                "${ID:-unknown}" "$description" >&2
+            exit 1
+            ;;
+    esac
+
+    if ! confirm "$description is required. Install package '$package' using $manager"; then
+        printf 'Install %s manually, then rerun make backup-setup.\n' "$description" >&2
+        exit 1
+    fi
+
+    case "$manager" in
+        apt-get)
+            run_as_admin apt-get update
+            run_as_admin apt-get install -y "$package"
+            ;;
+        dnf|yum)
+            run_as_admin "$manager" install -y "$package"
+            ;;
+        pacman)
+            run_as_admin pacman -Sy --needed --noconfirm "$package"
+            ;;
+        zypper)
+            run_as_admin zypper --non-interactive install "$package"
+            ;;
+        apk)
+            run_as_admin apk add --no-cache "$package"
+            ;;
+    esac
+}
+
+ensure_postgres_client_tools() {
+    local tool missing_tools
+    local required_tools=(pg_dump psql)
+    if [[ "$backup_format" == "custom" ]]; then
+        required_tools+=(pg_restore)
+    fi
+    missing_tools=""
+    for tool in "${required_tools[@]}"; do
+        if ! command -v "$tool" >/dev/null 2>&1; then
+            missing_tools+="${missing_tools:+, }$tool"
+        fi
+    done
+    [[ -z "$missing_tools" ]] && return
+
+    printf 'Missing PostgreSQL client tool(s): %s.\n' "$missing_tools" >&2
+    printf '%s\n' "These tools are needed to create and verify PostgreSQL database dumps."
+    case "$(uname -s)" in
+        Darwin)
+            if ! command -v brew >/dev/null 2>&1; then
+                printf '%s\n' "Install Homebrew, then install the PostgreSQL client tools with 'brew install libpq'." >&2
+                exit 1
+            fi
+            if ! confirm "Install PostgreSQL client tools using Homebrew package libpq"; then
+                printf '%s\n' "Install PostgreSQL client tools manually, then rerun make backup-setup." >&2
+                exit 1
+            fi
+            brew install libpq
+            postgres_client_bin="$(brew --prefix libpq)/bin"
+            export PATH="$postgres_client_bin:$PATH"
+            ;;
+        Linux)
+            install_linux_package \
+                "PostgreSQL client tools (pg_dump, psql, and pg_restore when using custom format)" \
+                "postgresql-client" "postgresql" "postgresql" "postgresql" "postgresql-client"
+            ;;
+        *)
+            printf '%s\n' "Automatic PostgreSQL client installation is supported on macOS and recognized Linux distributions." >&2
+            exit 1
+            ;;
+    esac
+
+    for tool in "${required_tools[@]}"; do
+        if ! command -v "$tool" >/dev/null 2>&1; then
+            printf '%s\n' "$tool is still unavailable after the installation attempt. Check your PATH and PostgreSQL client version." >&2
+            exit 1
+        fi
+    done
+}
+
+ensure_aws_cli() {
+    if command -v aws >/dev/null 2>&1; then
+        return
+    fi
+    printf '%s\n' "AWS CLI (aws) is needed to verify, upload, and manage S3 backups."
+    case "$(uname -s)" in
+        Darwin)
+            if ! command -v brew >/dev/null 2>&1; then
+                printf '%s\n' "Install AWS CLI manually, then rerun make backup-setup." >&2
+                exit 1
+            fi
+            if ! confirm "Install AWS CLI using Homebrew package awscli"; then
+                printf '%s\n' "Install AWS CLI manually, then rerun make backup-setup." >&2
+                exit 1
+            fi
+            brew install awscli
+            ;;
+        Linux)
+            install_linux_package "AWS CLI" "awscli" "awscli" "aws-cli" "aws-cli" "aws-cli"
+            ;;
+        *)
+            printf '%s\n' "Automatic AWS CLI installation is supported on macOS and recognized Linux distributions." >&2
+            exit 1
+            ;;
+    esac
+    if ! command -v aws >/dev/null 2>&1; then
+        printf '%s\n' "AWS CLI is still unavailable after the installation attempt. Check your PATH." >&2
+        exit 1
+    fi
+}
+
+ensure_crontab() {
+    if command -v crontab >/dev/null 2>&1; then
+        return
+    fi
+    if [[ "$(uname -s)" != "Linux" ]]; then
+        printf '%s\n' "crontab is unavailable. Choose the external scheduler or install cron manually." >&2
+        exit 1
+    fi
+
+    install_linux_package "cron scheduler (crontab)" "cron" "cronie" "cronie" "cron" "dcron"
+    if ! command -v crontab >/dev/null 2>&1; then
+        printf '%s\n' "crontab is still unavailable after the installation attempt. Choose an external scheduler or check your PATH." >&2
+        exit 1
+    fi
+}
+
 aws_options=()
 db_host="$(read_value 'JAVARA PostgreSQL host' 'localhost')"
 db_port="$(read_value 'JAVARA PostgreSQL port' '5432')"
@@ -144,10 +323,6 @@ if [[ "$backup_destination" == "s3" || "$backup_destination" == "both" ]]; then
         printf '%s\n' "Select AES256 or configure encryption on the bucket before continuing." >&2
         exit 1
     fi
-    if ! command -v aws >/dev/null 2>&1; then
-        printf '%s\n' "AWS CLI is required for S3 destinations; install it and rerun make backup-setup." >&2
-        exit 1
-    fi
     [[ -z "$s3_profile" || "$s3_profile" =~ ^[A-Za-z0-9._-]+$ ]] || {
         printf '%s\n' "AWS profile contains unsupported characters." >&2
         exit 1
@@ -209,20 +384,9 @@ case "$db_sslmode" in
         ;;
 esac
 
-for tool in pg_dump psql; do
-    if ! command -v "$tool" >/dev/null 2>&1; then
-        printf 'Required PostgreSQL client tool is missing: %s\n' "$tool" >&2
-        printf '%s\n' "Install the PostgreSQL client tools for your server version, then rerun make backup-setup." >&2
-        exit 1
-    fi
-done
-if [[ "$backup_format" == "custom" ]] && ! command -v pg_restore >/dev/null 2>&1; then
-    printf '%s\n' "pg_restore is required to verify custom-format backups." >&2
-    exit 1
-fi
-if [[ "$scheduler_mode" == "cron" ]] && ! command -v crontab >/dev/null 2>&1; then
-    printf '%s\n' "crontab is unavailable; choose external scheduling or install cron." >&2
-    exit 1
+ensure_postgres_client_tools
+if [[ "$scheduler_mode" == "cron" ]]; then
+    ensure_crontab
 fi
 
 database_check="$(
@@ -239,14 +403,43 @@ database_check="$(
             --port="$db_port" \
             --username="$db_user" \
             --dbname="$db_name" \
-            --command="SELECT to_regclass('public.refresh_tokens') IS NOT NULL AND to_regclass('public.flyway_schema_history') IS NOT NULL"
+            --command="SELECT (to_regclass('public.refresh_tokens') IS NOT NULL AND to_regclass('public.flyway_schema_history') IS NOT NULL)::text || '|' || current_setting('server_version_num')"
 )"
-if [[ "$database_check" != "t" ]]; then
+schema_check="${database_check%%|*}"
+server_version_num="${database_check#*|}"
+if [[ "$schema_check" != "true" ]]; then
     printf '%s\n' "The selected database is not a migrated JAVARA database (refresh_tokens/Flyway history missing)." >&2
+    exit 1
+fi
+if [[ ! "$server_version_num" =~ ^[0-9]+$ ]]; then
+    printf 'Could not determine PostgreSQL server version from database response: %s\n' "$database_check" >&2
+    exit 1
+fi
+
+pg_dump_version="$(pg_dump --version | awk '{
+    for (i = 1; i <= NF; i++) {
+        if ($i ~ /^[0-9]+([.][0-9]+)*$/) {
+            print $i
+            exit
+        }
+    }
+}')"
+if [[ ! "$pg_dump_version" =~ ^[0-9]+([.][0-9]+)*$ ]]; then
+    printf 'Could not determine pg_dump version from command output: %s\n' "$pg_dump_version" >&2
+    exit 1
+fi
+pg_dump_major="${pg_dump_version%%.*}"
+server_major=$((server_version_num / 10000))
+if (( server_version_num >= 100000 && pg_dump_major < server_major )); then
+    printf 'pg_dump %s is older than PostgreSQL server major version %s.\n' \
+        "$pg_dump_version" "$server_major" >&2
+    printf 'Install PostgreSQL client tools version %s or newer, then rerun make backup-setup.\n' \
+        "$server_major" >&2
     exit 1
 fi
 
 if [[ "$backup_destination" == "s3" || "$backup_destination" == "both" ]]; then
+    ensure_aws_cli
     s3_bucket="${s3_uri#s3://}"
     s3_bucket="${s3_bucket%%/*}"
     aws s3api head-bucket --bucket "$s3_bucket" \

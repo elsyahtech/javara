@@ -34,6 +34,7 @@ public class AuthRateLimitInterceptor implements HandlerInterceptor {
         this.refreshProperties = refreshProperties;
     }
 
+    @Override
     public boolean preHandle(
             HttpServletRequest request,
             HttpServletResponse response,

@@ -38,3 +38,7 @@ tests are the source of truth; please report the mismatch.
 JAVARA is a starter service, not a complete identity or business platform.
 Read [Production and business adoption](guide/production-and-adoption.md)
 before using it with real customers or sensitive data.
+
+For a security verification checklist, see the
+[OWASP ASVS v5.0.0 matrix](security/asvs-matrix.md). Its requirements have not
+been assessed yet.
