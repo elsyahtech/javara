@@ -36,11 +36,15 @@ class AuthRateLimitWebMvcConfigurationTests {
                 new String[] {
                         "/api/v1/auth/login",
                         "/api/v1/auth/register",
+                        "/api/v1/auth/email/verification/resend",
+                        "/api/v1/auth/email/verify",
                         "/api/v1/auth/refresh",
                         "/api/v1/auth/password/change",
+                        "/api/v1/auth/email/change",
                         "/api/v1/auth/sessions/*/terminate",
                         "/api/v1/auth/sessions/terminate-all",
-                        "/api/v1/admin/users/*/sessions/terminate"
+                        "/api/v1/admin/users/*/sessions/terminate",
+                        "/api/v1/admin/users/*/email/change"
                 },
                 mapped.getIncludePathPatterns());
     }
@@ -56,7 +60,11 @@ class AuthRateLimitWebMvcConfigurationTests {
         assertEquals(1, registered.size());
         MappedInterceptor mapped = (MappedInterceptor) registered.get(0);
         assertArrayEquals(
-                new String[] {"/api/v1/auth/register"},
+                new String[] {
+                        "/api/v1/auth/register",
+                        "/api/v1/auth/email/verification/resend",
+                        "/api/v1/auth/email/verify"
+                },
                 mapped.getIncludePathPatterns());
     }
 

@@ -43,6 +43,7 @@ import com.elsyah.tech.javara.response.user.UserResponse;
 import com.elsyah.tech.javara.service.auth.AuthService;
 import com.elsyah.tech.javara.service.auth.AuthServiceResult;
 import com.elsyah.tech.javara.service.common.ServiceResult;
+import com.elsyah.tech.javara.service.email.EmailVerificationService;
 import com.elsyah.tech.javara.service.user.UserService;
 
 class AuthControllerTests {
@@ -58,7 +59,7 @@ class AuthControllerTests {
                 user, "access-token", "refresh-token", HttpStatus.OK, "Login successful"));
 
         ResponseEntity<ApiResponse<AuthTokenResponse>> response =
-                new AuthController(userService, authService, properties).login(request);
+                controller(userService, authService, properties).login(request);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertNotNull(response.getBody());
@@ -84,7 +85,7 @@ class AuthControllerTests {
                 "Login successful"));
 
         ResponseEntity<ApiResponse<AuthTokenResponse>> response =
-                new AuthController(userService, authService, properties).login(request);
+                controller(userService, authService, properties).login(request);
 
         assertNotNull(response.getBody());
         assertNull(response.getBody().getData().accessToken());
@@ -102,17 +103,17 @@ class AuthControllerTests {
         AuthService authService = mock(AuthService.class);
         RegisterRequest request = new RegisterRequest("new@example.com", "password123");
         UserEntity user = user("user-2");
-        when(userService.createUser(new UserRequest("new@example.com", "password123", null)))
+        when(userService.registerUser(new UserRequest("new@example.com", "password123", null)))
                 .thenReturn(new ServiceResult<>(user, HttpStatus.CREATED, "User created"));
 
         ResponseEntity<ApiResponse<UserResponse>> response =
-                new AuthController(userService, authService, jwtProperties(TokenTransport.BEARER))
+                controller(userService, authService, jwtProperties(TokenTransport.BEARER))
                         .register(request);
 
         assertEquals(HttpStatus.CREATED, response.getStatusCode());
         assertNotNull(response.getBody());
         assertEquals("USER", response.getBody().getData().role().name());
-        verify(userService).createUser(new UserRequest("new@example.com", "password123", null));
+        verify(userService).registerUser(new UserRequest("new@example.com", "password123", null));
     }
 
     // Verifies that invalid login payloads are rejected before authentication is attempted.
@@ -121,7 +122,7 @@ class AuthControllerTests {
         UserService userService = mock(UserService.class);
         AuthService authService = mock(AuthService.class);
         MockMvc mockMvc = MockMvcBuilders.standaloneSetup(
-                new AuthController(userService, authService, jwtProperties(TokenTransport.BEARER)))
+                controller(userService, authService, jwtProperties(TokenTransport.BEARER)))
                 .build();
 
         mockMvc.perform(post("/api/v1/auth/login")
@@ -167,7 +168,7 @@ class AuthControllerTests {
                 "Login successful"));
 
         ResponseEntity<ApiResponse<AuthTokenResponse>> response =
-                new AuthController(userService, authService, jwtProperties(TokenTransport.BEARER))
+                controller(userService, authService, jwtProperties(TokenTransport.BEARER))
                         .login(request);
 
         assertNull(response.getHeaders().get(HttpHeaders.SET_COOKIE));
@@ -181,7 +182,7 @@ class AuthControllerTests {
         when(authService.logout(null)).thenReturn(false);
         MockHttpServletRequest request = new MockHttpServletRequest();
 
-        ResponseEntity<ApiResponse<Void>> response = new AuthController(
+        ResponseEntity<ApiResponse<Void>> response = controller(
                 userService,
                 authService,
                 jwtProperties(TokenTransport.COOKIE))
@@ -202,7 +203,7 @@ class AuthControllerTests {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setCookies(new Cookie("REFRESH_TOKEN", "refresh-token"));
 
-        ResponseEntity<ApiResponse<Void>> response = new AuthController(
+        ResponseEntity<ApiResponse<Void>> response = controller(
                 userService,
                 authService,
                 jwtProperties(TokenTransport.COOKIE))
@@ -226,7 +227,7 @@ class AuthControllerTests {
                 .thenReturn(new ServiceResult<>(
                         null, HttpStatus.OK, "Password changed successfully"));
 
-        ResponseEntity<ApiResponse<Void>> response = new AuthController(
+        ResponseEntity<ApiResponse<Void>> response = controller(
                 userService,
                 mock(AuthService.class),
                 jwtProperties(TokenTransport.BEARER))
@@ -251,7 +252,7 @@ class AuthControllerTests {
                 .thenReturn(new ServiceResult<>(
                         null, HttpStatus.OK, "Password changed successfully"));
 
-        ResponseEntity<ApiResponse<Void>> response = new AuthController(
+        ResponseEntity<ApiResponse<Void>> response = controller(
                 userService,
                 mock(AuthService.class),
                 jwtProperties(TokenTransport.COOKIE))
@@ -270,6 +271,17 @@ class AuthControllerTests {
         user.setEmail("user@example.com");
         user.setIsActive(true);
         return user;
+    }
+
+    private static AuthController controller(
+            UserService userService,
+            AuthService authService,
+            JwtProperties properties) {
+        return new AuthController(
+                userService,
+                authService,
+                mock(EmailVerificationService.class),
+                properties);
     }
 
     private static JwtProperties jwtProperties(TokenTransport transport) {

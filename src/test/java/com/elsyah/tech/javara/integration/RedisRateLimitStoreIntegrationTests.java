@@ -152,7 +152,7 @@ class RedisRateLimitStoreIntegrationTests extends PostgresRedisTestSupport {
                                 {"email":"rate-limit-one@example.com","password":"password123"}
                                 """))
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
-                        .status().isCreated());
+                        .status().isServiceUnavailable());
 
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
                         .post("/api/v1/auth/register")

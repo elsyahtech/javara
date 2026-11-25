@@ -43,6 +43,7 @@ class BootstrapAdminServiceTests {
         UserEntity admin = userCaptor.getValue();
         assertEquals(UserRole.ADMIN, admin.getRole());
         assertEquals("admin@example.com", admin.getEmail());
+        assertTrue(admin.isEmailVerified());
         assertTrue(passwordHashService.matches("admin-password", admin.getPassword()));
     }
 

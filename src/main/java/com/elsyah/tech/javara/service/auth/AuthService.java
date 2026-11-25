@@ -23,6 +23,7 @@ import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
 import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.request.auth.LoginRequest;
 import com.elsyah.tech.javara.service.common.ServiceResult;
+import com.elsyah.tech.javara.service.email.EmailNotificationService;
 import com.elsyah.tech.javara.service.user.UserService;
 
 @Service
@@ -35,6 +36,7 @@ public class AuthService {
     private final AccessTokenService accessTokenService;
     private final JwtProperties jwtProperties;
     private final SessionProperties sessionProperties;
+    private final EmailNotificationService emailNotificationService;
     private final Clock clock;
 
     public AuthService(
@@ -44,6 +46,7 @@ public class AuthService {
             AccessTokenService accessTokenService,
             JwtProperties jwtProperties,
             SessionProperties sessionProperties,
+            EmailNotificationService emailNotificationService,
             Clock clock) {
         this.userService = userService;
         this.userRepository = userRepository;
@@ -51,6 +54,7 @@ public class AuthService {
         this.accessTokenService = accessTokenService;
         this.jwtProperties = jwtProperties;
         this.sessionProperties = sessionProperties;
+        this.emailNotificationService = emailNotificationService;
         this.clock = clock;
     }
 
@@ -80,12 +84,14 @@ public class AuthService {
                     "Maximum number of active sessions reached");
         }
 
-        return issueTokens(
+        AuthServiceResult result = issueTokens(
                 lockedUser.get(),
                 UUID.randomUUID(),
                 now,
                 now.plus(sessionProperties.absoluteLifetime()),
                 "Login successful");
+        emailNotificationService.newSession(lockedUser.get().getEmail());
+        return result;
     }
 
     @Transactional

@@ -18,6 +18,8 @@ import com.elsyah.tech.javara.entity.user.UserEntity;
 import com.elsyah.tech.javara.projection.user.UserSelectColumn;
 import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
 import com.elsyah.tech.javara.repository.user.UserRepository;
+import com.elsyah.tech.javara.service.email.EmailNotificationService;
+import com.elsyah.tech.javara.service.email.EmailVerificationService;
 import com.elsyah.tech.javara.request.user.UserRequest;
 import com.elsyah.tech.javara.request.user.UserUpdateRequest;
 import com.elsyah.tech.javara.request.auth.LoginRequest;
@@ -46,6 +48,8 @@ public class UserService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordHashService passwordHashService;
     private final PasswordPolicyService passwordPolicyService;
+    private final EmailNotificationService emailNotificationService;
+    private final EmailVerificationService emailVerificationService;
     private final Clock clock;
 
     /**
@@ -58,11 +62,15 @@ public class UserService {
             PasswordHashService passwordHashService,
             RefreshTokenRepository refreshTokenRepository,
             PasswordPolicyService passwordPolicyService,
+            EmailNotificationService emailNotificationService,
+            EmailVerificationService emailVerificationService,
             Clock clock) {
         this.repository = repository;
         this.passwordHashService = passwordHashService;
         this.refreshTokenRepository = refreshTokenRepository;
         this.passwordPolicyService = passwordPolicyService;
+        this.emailNotificationService = emailNotificationService;
+        this.emailVerificationService = emailVerificationService;
         this.clock = clock;
     }
 
@@ -80,6 +88,25 @@ public class UserService {
      */
     @Transactional
     public ServiceResult<UserEntity> createUser(UserRequest request) {
+        return createUser(request, true);
+    }
+
+    @Transactional
+    public ServiceResult<UserEntity> registerUser(UserRequest request) {
+        if (!emailNotificationService.isEnabled()) {
+            return new ServiceResult<>(
+                    null,
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "Registration is temporarily unavailable because email verification is not configured");
+        }
+        ServiceResult<UserEntity> result = createUser(request, false);
+        if (!result.isError()) {
+            emailVerificationService.issueRegistrationToken(result.data());
+        }
+        return result;
+    }
+
+    private ServiceResult<UserEntity> createUser(UserRequest request, boolean emailVerified) {
         if (!passwordPolicyService.isPasswordAllowed(request.password())) {
             return rejectedPassword();
         }
@@ -96,6 +123,7 @@ public class UserService {
         userEntity.setEmail(request.email());
         userEntity.setPassword(passwordHashService.encode(request.password()));
         userEntity.setIsActive(true);
+        userEntity.setEmailVerified(emailVerified);
 
         UserEntity createdUser = repository.saveAndFlush(userEntity);
         return new ServiceResult<>(
@@ -197,13 +225,18 @@ public class UserService {
         if (optionalUser.isPresent()) {
             UserEntity userEntity = optionalUser.get();
 
+            if (!userEntity.getEmail().equals(request.email())) {
+                return new ServiceResult<>(
+                        null,
+                        HttpStatus.BAD_REQUEST,
+                        "Use the dedicated email-change endpoint to update an email address");
+            }
             if (repository.existsByEmailAndIdNot(request.email(), id)) {
                 return new ServiceResult<>(null, HttpStatus.CONFLICT, "Email already exists");
             }
 
             boolean accountDisabled = Boolean.TRUE.equals(userEntity.getIsActive())
                     && Boolean.FALSE.equals(request.isActive());
-            userEntity.setEmail(request.email());
             if (request.isActive() != null) {
                 userEntity.setIsActive(request.isActive());
             }
@@ -218,6 +251,59 @@ public class UserService {
         }
 
         return new ServiceResult<>(null, HttpStatus.NOT_FOUND, "User not found with id: " + id);
+    }
+
+    @Transactional
+    public ServiceResult<Void> requestEmailChange(
+            UUID actingUserId,
+            UUID targetUserId,
+            String currentPassword,
+            String newEmail,
+            boolean administratorRequest) {
+        Optional<UserEntity> actingUser = repository.findByIdForUpdate(actingUserId);
+        if (actingUser.isEmpty()
+                || !Boolean.TRUE.equals(actingUser.get().getIsActive())
+                || currentPassword == null
+                || !passwordHashService.matches(
+                        currentPassword, actingUser.get().getPassword())
+                || (administratorRequest
+                        ? actingUser.get().getRole() != com.elsyah.tech.javara.entity.user.UserRole.ADMIN
+                        : !actingUserId.equals(targetUserId))) {
+            return new ServiceResult<>(
+                    null, HttpStatus.UNAUTHORIZED, "Re-authentication failed");
+        }
+        if (!emailNotificationService.isEnabled()) {
+            return new ServiceResult<>(
+                    null,
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "Email change is temporarily unavailable because email delivery is not configured");
+        }
+
+        Optional<UserEntity> targetUser = repository.findByIdForUpdate(targetUserId);
+        if (targetUser.isEmpty()
+                || targetUser.get().getDeletedAt() != null
+                || !Boolean.TRUE.equals(targetUser.get().getIsActive())) {
+            return new ServiceResult<>(null, HttpStatus.NOT_FOUND, "User not found");
+        }
+        UserEntity user = targetUser.get();
+        if (newEmail.equals(user.getEmail())) {
+            return new ServiceResult<>(
+                    null, HttpStatus.BAD_REQUEST, "New email must be different");
+        }
+        if (repository.existsByEmailAndIdNot(newEmail, targetUserId)
+                || repository.existsByPendingEmailAndIdNot(newEmail, targetUserId)) {
+            return new ServiceResult<>(
+                    null, HttpStatus.CONFLICT, "Email is already in use");
+        }
+
+        user.setPendingEmail(newEmail);
+        user.setUpdatedAt(clock.instant());
+        repository.saveAndFlush(user);
+        emailVerificationService.issueEmailChangeToken(user, newEmail);
+        return new ServiceResult<>(
+                null,
+                HttpStatus.ACCEPTED,
+                "Check the new email address to confirm the change");
     }
 
     @Transactional
@@ -250,6 +336,7 @@ public class UserService {
         user.setUpdatedAt(now);
         repository.saveAndFlush(user);
         refreshTokenRepository.revokeActiveTokensForUser(userId, now);
+        emailNotificationService.passwordChanged(user.getEmail());
         return new ServiceResult<>(null, HttpStatus.OK, "Password changed successfully");
     }
 
@@ -302,7 +389,9 @@ public class UserService {
         UserEntity user = optionalUser.get();
         boolean passwordMatches =
                 passwordHashService.matches(request.password(), user.getPassword());
-        if (!Boolean.TRUE.equals(user.getIsActive()) || !passwordMatches) {
+        if (!Boolean.TRUE.equals(user.getIsActive())
+                || !user.isEmailVerified()
+                || !passwordMatches) {
             return invalidCredentials();
         }
 

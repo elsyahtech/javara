@@ -6,7 +6,7 @@
 |---|---|
 | Standard | OWASP Application Security Verification Standard (ASVS) v5.0.0 |
 | Requested target | Level 3 |
-| Assessment status | In progress; 21 confirmed gaps in V6/V7 and 324 requirements not assessed; see [assessment record](assessment/README.md) |
+| Assessment status | In progress; 8 requirements `Fail`, 13 `Pending`, 324 `Not assessed`, none `Pass`; see [assessment record](assessment/README.md) |
 | Assessor and assessment date | To be completed |
 | Intended use | Reusable JAVARA baseline for banking, finance/fintech, energy, and startup solutions |
 | Product objective | Modular, configurable, secure foundation for multi-company solutions; not yet assessed |
@@ -38,11 +38,13 @@ assessment. The target is to satisfy every requirement. No requirement is
 excluded by default; raise any genuine applicability issue with the Auditor
 for an explicit decision rather than silently marking it `Not applicable`.
 
-The initial V6/V7 repository review recorded 21 requirements as `Fail`; the
-other 324 requirements remain `Not assessed`. No requirement is currently
-marked `Pass` or excluded. See the [authentication and session management
-review](assessment/authentication-session-review.md) for evidence and
-remediation targets.
+The initial V6/V7 source review recorded 21 requirements as `Fail`. Following
+worktree remediation and local verification, the current disposition is 8
+`Fail`, 13 `Pending` retest/evidence, and 324 `Not assessed`. No requirement is
+currently marked `Pass` or excluded. The current review includes uncommitted
+changes; see the [authentication and session management
+review](assessment/authentication-session-review.md) for scope, evidence, and
+remaining gaps.
 
 ## How to use this matrix
 
@@ -247,8 +249,8 @@ It is not endorsed by OWASP.
 | `v5.0.0-V6.1.3` | L2 | Pending | Not assessed |  |  |
 | `v5.0.0-V6.2.1` | L1 | Pending | Not assessed |  |  |
 | `v5.0.0-V6.2.2` | L1 | Pending | Not assessed |  |  |
-| `v5.0.0-V6.2.3` | L1 | In scope | Fail | [AUTH-02](assessment/authentication-session-review.md#auth-02) | Owner TBD; retest dedicated current-password change flow. |
-| `v5.0.0-V6.2.4` | L1 | In scope | Fail | [AUTH-03](assessment/authentication-session-review.md#auth-03) | Owner TBD; test top-3000 password blocklist. |
+| `v5.0.0-V6.2.3` | L1 | In scope | Pending | [AUTH-02](assessment/authentication-session-review.md#auth-02) | Dedicated current-password change flow implemented; complete ASVS retest remains. |
+| `v5.0.0-V6.2.4` | L1 | In scope | Pending | [AUTH-03](assessment/authentication-session-review.md#auth-03) | Policy implemented; approved production dataset and coverage evidence remain. |
 | `v5.0.0-V6.2.5` | L1 | Pending | Not assessed |  |  |
 | `v5.0.0-V6.2.6` | L1 | Pending | Not assessed |  |  |
 | `v5.0.0-V6.2.7` | L1 | Pending | Not assessed |  |  |
@@ -256,14 +258,14 @@ It is not endorsed by OWASP.
 | `v5.0.0-V6.2.9` | L2 | Pending | Not assessed |  |  |
 | `v5.0.0-V6.2.10` | L2 | Pending | Not assessed |  |  |
 | `v5.0.0-V6.2.11` | L2 | In scope | Fail | [AUTH-01](assessment/authentication-session-review.md#auth-01) | Owner TBD; verify documented context-word policy is enforced. |
-| `v5.0.0-V6.2.12` | L2 | In scope | Fail | [AUTH-04](assessment/authentication-session-review.md#auth-04) | Owner TBD; test breached-password checks. |
+| `v5.0.0-V6.2.12` | L2 | In scope | Pending | [AUTH-04](assessment/authentication-session-review.md#auth-04) | Offline hash lookup implemented; approved corpus and deployment evidence remain. |
 | `v5.0.0-V6.3.1` | L1 | Pending | Not assessed |  |  |
 | `v5.0.0-V6.3.2` | L1 | Pending | Not assessed |  |  |
 | `v5.0.0-V6.3.3` | L2 | In scope | Fail | [AUTH-05](assessment/authentication-session-review.md#auth-05) | Owner TBD; verify Level 3 hardware-based phishing-resistant factor. |
 | `v5.0.0-V6.3.4` | L2 | Pending | Not assessed |  |  |
 | `v5.0.0-V6.3.5` | L3 | In scope | Fail | [AUTH-06](assessment/authentication-session-review.md#auth-06) | Owner TBD; test suspicious-auth detection and notifications. |
 | `v5.0.0-V6.3.6` | L3 | Pending | Not assessed |  |  |
-| `v5.0.0-V6.3.7` | L3 | In scope | Fail | [AUTH-07](assessment/authentication-session-review.md#auth-07) | Owner TBD; test notifications after credential/email changes. |
+| `v5.0.0-V6.3.7` | L3 | In scope | Pending | [AUTH-07](assessment/authentication-session-review.md#auth-07) | Email notifications implemented; verify all event delivery and failure/retry handling. |
 | `v5.0.0-V6.3.8` | L3 | In scope | Fail | [AUTH-08](assessment/authentication-session-review.md#auth-08) | Owner TBD; test registration against account enumeration. |
 | `v5.0.0-V6.4.1` | L1 | Pending | Not assessed |  |  |
 | `v5.0.0-V6.4.2` | L1 | Pending | Not assessed |  |  |
@@ -293,22 +295,22 @@ It is not endorsed by OWASP.
 ### V7 - Session Management
 | Requirement ID | Minimum level | Applicability | Result | Evidence | Finding / owner / retest |
 |---|---:|---|---|---|---|
-| `v5.0.0-V7.1.1` | L2 | In scope | Fail | [SES-01](assessment/authentication-session-review.md#ses-01) | Owner TBD; document and verify inactivity/absolute lifetime decisions. |
-| `v5.0.0-V7.1.2` | L2 | In scope | Fail | [SES-02](assessment/authentication-session-review.md#ses-02) | Owner TBD; define and test concurrent-session limits and behavior. |
+| `v5.0.0-V7.1.1` | L2 | In scope | Pending | [SES-01](assessment/authentication-session-review.md#ses-01) | Timeout values documented and implemented; risk rationale and retest remain. |
+| `v5.0.0-V7.1.2` | L2 | In scope | Pending | [SES-02](assessment/authentication-session-review.md#ses-02) | Five-session limit implemented; edge-case retest and risk rationale remain. |
 | `v5.0.0-V7.1.3` | L2 | Pending | Not assessed |  |  |
 | `v5.0.0-V7.2.1` | L1 | Pending | Not assessed |  |  |
 | `v5.0.0-V7.2.2` | L1 | Pending | Not assessed |  |  |
 | `v5.0.0-V7.2.3` | L1 | Pending | Not assessed |  |  |
 | `v5.0.0-V7.2.4` | L1 | Pending | Not assessed |  |  |
 | `v5.0.0-V7.3.1` | L2 | Pending | Not assessed |  |  |
-| `v5.0.0-V7.3.2` | L2 | In scope | Fail | [SES-03](assessment/authentication-session-review.md#ses-03) | Owner TBD; test absolute lifetime across repeated refresh. |
-| `v5.0.0-V7.4.1` | L1 | In scope | Fail | [SES-04](assessment/authentication-session-review.md#ses-04) | Owner TBD; test that logout blocks existing access tokens. |
-| `v5.0.0-V7.4.2` | L1 | In scope | Fail | [SES-05](assessment/authentication-session-review.md#ses-05) | Owner TBD; test token rejection after account disable/delete. |
-| `v5.0.0-V7.4.3` | L2 | In scope | Fail | [SES-06](assessment/authentication-session-review.md#ses-06) | Owner TBD; verify other sessions end after factor changes. |
+| `v5.0.0-V7.3.2` | L2 | In scope | Pending | [SES-03](assessment/authentication-session-review.md#ses-03) | Absolute session expiry preserved across refresh; boundary/repeated-refresh retest remains. |
+| `v5.0.0-V7.4.1` | L1 | In scope | Pending | [SES-04](assessment/authentication-session-review.md#ses-04) | Session-bound access-token validation implemented; complete revocation retest remains. |
+| `v5.0.0-V7.4.2` | L1 | In scope | Pending | [SES-05](assessment/authentication-session-review.md#ses-05) | Disable/delete session revocation implemented; complete retest remains. |
+| `v5.0.0-V7.4.3` | L2 | In scope | Pending | [SES-06](assessment/authentication-session-review.md#ses-06) | Password changes revoke sessions; multi-session retest remains. |
 | `v5.0.0-V7.4.4` | L2 | Pending | Not assessed |  |  |
-| `v5.0.0-V7.4.5` | L2 | In scope | Fail | [SES-07](assessment/authentication-session-review.md#ses-07) | Owner TBD; test admin session termination and authorization. |
-| `v5.0.0-V7.5.1` | L2 | In scope | Fail | [SES-08](assessment/authentication-session-review.md#ses-08) | Owner TBD; test full re-authentication before email changes. |
-| `v5.0.0-V7.5.2` | L2 | In scope | Fail | [SES-09](assessment/authentication-session-review.md#ses-09) | Owner TBD; test user session listing and termination. |
+| `v5.0.0-V7.4.5` | L2 | In scope | Pending | [SES-07](assessment/authentication-session-review.md#ses-07) | Admin termination endpoint implemented; manual retest and audit-trail review remain. |
+| `v5.0.0-V7.5.1` | L2 | In scope | Pending | [SES-08](assessment/authentication-session-review.md#ses-08) | Re-authenticated email change and confirmation manually exercised; complete retest remains. |
+| `v5.0.0-V7.5.2` | L2 | In scope | Pending | [SES-09](assessment/authentication-session-review.md#ses-09) | Session listing exercised; termination endpoint retest remains. |
 | `v5.0.0-V7.5.3` | L3 | In scope | Fail | [SES-10](assessment/authentication-session-review.md#ses-10) | Owner TBD; test step-up verification for sensitive operations. |
 | `v5.0.0-V7.6.1` | L2 | Pending | Not assessed |  |  |
 | `v5.0.0-V7.6.2` | L2 | Pending | Not assessed |  |  |

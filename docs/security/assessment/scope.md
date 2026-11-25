@@ -2,10 +2,12 @@
 
 ## Status
 
-The assessment is in progress. A preliminary repository review of V6 and V7
-recorded 21 confirmed gaps; the other 324 requirements remain not assessed.
-No requirement has been verified as passing, and no production-readiness claim
-is made. See the [authentication and session management review](authentication-session-review.md).
+The assessment is in progress. The pinned source baseline review of V6 and V7
+recorded 21 requirements as failing. Current worktree remediation changes that
+disposition to 8 `Fail`, 13 `Pending`, and 324 `Not assessed`; none is verified
+as `Pass`. Current remediation changes are uncommitted and are not part of the
+pinned baseline. See the [authentication and session management
+review](authentication-session-review.md).
 
 ## Assessment baseline
 

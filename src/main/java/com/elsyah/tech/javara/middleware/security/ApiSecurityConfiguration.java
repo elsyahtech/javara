@@ -37,6 +37,8 @@ public class ApiSecurityConfiguration {
     private static final Set<String> PUBLIC_AUTH_ENDPOINTS = Set.of(
             "/api/v1/auth/register",
             "/api/v1/auth/login",
+            "/api/v1/auth/email/verify",
+            "/api/v1/auth/email/verification/resend",
             "/api/v1/auth/refresh",
             "/api/v1/auth/logout",
             "/api/v1/auth/csrf");
@@ -77,6 +79,8 @@ public class ApiSecurityConfiguration {
                                 "/",
                                 "/api/v1/auth/register",
                                 "/api/v1/auth/login",
+                                "/api/v1/auth/email/verify",
+                                "/api/v1/auth/email/verification/resend",
                                 "/api/v1/auth/refresh",
                                 "/api/v1/auth/logout",
                                 "/api/v1/auth/csrf").permitAll()
@@ -85,7 +89,8 @@ public class ApiSecurityConfiguration {
         if (jwtProperties.transport() == TokenTransport.COOKIE) {
             security.csrf(csrf -> csrf
                     .csrfTokenRepository(csrfTokenRepository)
-                    .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler()));
+                    .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
+                    .ignoringRequestMatchers("/api/v1/auth/email/verify"));
         } else {
             security.csrf(AbstractHttpConfigurer::disable);
         }

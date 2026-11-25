@@ -42,6 +42,8 @@ import com.elsyah.tech.javara.request.auth.LoginRequest;
 import com.elsyah.tech.javara.service.user.PasswordPolicyService;
 import com.elsyah.tech.javara.service.user.UserService;
 import com.elsyah.tech.javara.service.common.ServiceResult;
+import com.elsyah.tech.javara.service.email.EmailNotificationService;
+import com.elsyah.tech.javara.service.email.EmailVerificationService;
 import com.elsyah.tech.javara.utils.security.PasswordHashService;
 
 
@@ -67,6 +69,8 @@ class UserServiceTests {
                 new PasswordHashService(),
                 mock(RefreshTokenRepository.class),
                 allowedPasswordPolicy(),
+                mock(EmailNotificationService.class),
+                mock(EmailVerificationService.class),
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -78,6 +82,8 @@ class UserServiceTests {
                 passwordHashService,
                 mock(RefreshTokenRepository.class),
                 allowedPasswordPolicy(),
+                mock(EmailNotificationService.class),
+                mock(EmailVerificationService.class),
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -114,6 +120,8 @@ class UserServiceTests {
                 new PasswordHashService(),
                 mock(RefreshTokenRepository.class),
                 passwordPolicyService,
+                mock(EmailNotificationService.class),
+                mock(EmailVerificationService.class),
                 Clock.fixed(NOW, ZoneOffset.UTC));
 
         ServiceResult<UserEntity> result = service.createUser(
@@ -276,9 +284,9 @@ class UserServiceTests {
         PasswordHashService passwordHashService = new PasswordHashService();
         user.setPassword(passwordHashService.encode("oldpassword"));
         user.setIsActive(true);
-        UserUpdateRequest request = new UserUpdateRequest("new@example.com", false);
+        UserUpdateRequest request = new UserUpdateRequest("old@example.com", false);
         when(repository.findByIdForUpdate(uuid("user-1"))).thenReturn(Optional.of(user));
-        when(repository.existsByEmailAndIdNot("new@example.com", uuid("user-1"))).thenReturn(false);
+        when(repository.existsByEmailAndIdNot("old@example.com", uuid("user-1"))).thenReturn(false);
         when(repository.saveAndFlush(user)).thenReturn(user);
 
         ServiceResult<UserEntity> result = new UserService(
@@ -286,11 +294,13 @@ class UserServiceTests {
                 passwordHashService,
                 refreshTokenRepository,
                 allowedPasswordPolicy(),
+                mock(EmailNotificationService.class),
+                mock(EmailVerificationService.class),
                 Clock.fixed(NOW, ZoneOffset.UTC)).updateUser(uuid("user-1"), request);
 
         assertSame(user, result.data());
         assertEquals(HttpStatus.OK, result.status());
-        assertEquals("new@example.com", user.getEmail());
+        assertEquals("old@example.com", user.getEmail());
         assertTrue(passwordHashService.matches("oldpassword", user.getPassword()));
         assertFalse(passwordHashService.matches("newpassword", user.getPassword()));
         assertFalse(user.getIsActive());
@@ -302,19 +312,18 @@ class UserServiceTests {
 
     // Verifies that an email used by another user prevents an update.
     @Test
-    void updateUserReturnsConflictWhenAnotherUserUsesEmail() {
+    void updateUserRequiresDedicatedEmailChangeFlow() {
         UserRepository repository = mock(UserRepository.class);
         UserEntity user = new UserEntity();
         user.setId(uuid("user-1"));
         user.setEmail("old@example.com");
         UserUpdateRequest request = new UserUpdateRequest("taken@example.com", true);
         when(repository.findByIdForUpdate(uuid("user-1"))).thenReturn(Optional.of(user));
-        when(repository.existsByEmailAndIdNot("taken@example.com", uuid("user-1"))).thenReturn(true);
 
         ServiceResult<UserEntity> result = newService(repository).updateUser(uuid("user-1"), request);
 
-        assertEquals(HttpStatus.CONFLICT, result.status());
-        assertEquals("Email already exists", result.message());
+        assertEquals(HttpStatus.BAD_REQUEST, result.status());
+        assertTrue(result.message().contains("dedicated email-change endpoint"));
         assertNull(result.data());
         assertEquals("old@example.com", user.getEmail());
         verify(repository, never()).saveAndFlush(any());
@@ -366,6 +375,8 @@ class UserServiceTests {
                 passwordHashService,
                 refreshTokenRepository,
                 allowedPasswordPolicy(),
+                mock(EmailNotificationService.class),
+                mock(EmailVerificationService.class),
                 Clock.fixed(NOW, ZoneOffset.UTC)).updateUser(uuid("user-1"), request);
 
         assertEquals(HttpStatus.OK, result.status());
@@ -390,6 +401,8 @@ class UserServiceTests {
                 passwordHashService,
                 refreshTokenRepository,
                 allowedPasswordPolicy(),
+                mock(EmailNotificationService.class),
+                mock(EmailVerificationService.class),
                 Clock.fixed(NOW, ZoneOffset.UTC));
         ServiceResult<Void> result =
                 service.changePassword(user.getId(), "current-password", "new-password-123");
@@ -416,6 +429,8 @@ class UserServiceTests {
                 passwordHashService,
                 refreshTokenRepository,
                 allowedPasswordPolicy(),
+                mock(EmailNotificationService.class),
+                mock(EmailVerificationService.class),
                 Clock.fixed(NOW, ZoneOffset.UTC))
                 .changePassword(user.getId(), "incorrect-password", "new-password-123");
 
@@ -441,6 +456,8 @@ class UserServiceTests {
                 passwordHashService,
                 refreshTokenRepository,
                 allowedPasswordPolicy(),
+                mock(EmailNotificationService.class),
+                mock(EmailVerificationService.class),
                 Clock.fixed(NOW, ZoneOffset.UTC))
                 .changePassword(user.getId(), "current-password", "current-password");
 
@@ -468,6 +485,8 @@ class UserServiceTests {
                 passwordHashService,
                 refreshTokenRepository,
                 passwordPolicyService,
+                mock(EmailNotificationService.class),
+                mock(EmailVerificationService.class),
                 Clock.fixed(NOW, ZoneOffset.UTC))
                 .changePassword(
                         user.getId(),

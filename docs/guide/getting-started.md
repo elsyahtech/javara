@@ -34,6 +34,12 @@ make run
 The setup writes runtime settings to `config/application.yml`. That file is
 local, has restricted file permissions, and is ignored by Git. The generated
 configuration binds the API to `127.0.0.1:8080`.
+Setup asks for an SMTP host and port (defaults: Gmail and port 587), but not
+for SMTP credentials. Set `SMTP_USERNAME` and `SMTP_APP_PASSWORD` in the
+environment or a secret manager before running the API. Gmail requires an App
+Password, not the account password. Public registration sends a verification
+email, and the account cannot sign in until the address is confirmed. Existing
+and bootstrap administrator accounts are already verified.
 It also copies illustrative password-policy files into `config/security/`
 without overwriting files already there. These small examples let the local
 API start and demonstrate both checks; they are not a real denylist or breach

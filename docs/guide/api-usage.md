@@ -13,8 +13,11 @@ requests:
 Authorization: Bearer <access-token>
 ```
 
-Registration creates a `USER`, never an ADMIN. The initial ADMIN is created
-from bootstrap configuration. Do not expose bootstrap credentials to clients.
+Registration creates an active `USER`, never an ADMIN. New public registrations
+must verify their email before they can sign in; the initial ADMIN and accounts
+that existed before the email-verification migration remain verified. The
+initial ADMIN is created from bootstrap configuration. Do not expose bootstrap
+credentials to clients.
 
 Refresh rotates the refresh token. Keep the newest token and discard the old
 one. User access tokens are bound to a backend-validated session. Logout,
@@ -46,8 +49,13 @@ For browser cookies and CSRF, see the
 | Method and path | Access | Notes |
 |---|---|---|
 | `GET /` | Public | Simple welcome response |
-| `POST /api/v1/auth/register` | Public | Creates an active USER |
-| `POST /api/v1/auth/login` | Public | Returns tokens or sets cookies |
+| `POST /api/v1/auth/register` | Public | Creates an active, unverified USER and sends a verification email |
+| `GET /api/v1/auth/email/verify?token=...` | Public | Displays a confirmation form; does not consume the token |
+| `POST /api/v1/auth/email/verify` | Public | Consumes a single-use verification token |
+| `POST /api/v1/auth/email/verification/resend` | Public | Requests another registration verification email |
+| `POST /api/v1/auth/email/change` | Authenticated USER or ADMIN | Requires the current password; confirms the new address before changing it |
+| `POST /api/v1/admin/users/{userId}/email/change` | ADMIN | Requires the administrator's current password and confirmation of the new address |
+| `POST /api/v1/auth/login` | Public | Returns tokens or sets cookies; unverified accounts receive the generic invalid-credentials response |
 | `POST /api/v1/auth/refresh` | Public | Rotates a refresh token |
 | `POST /api/v1/auth/logout` | Current refresh token | Revokes that session; cookie mode also requires a CSRF token |
 | `POST /api/v1/auth/password/change` | USER or ADMIN | Requires current password; revokes all sessions and requires signing in again |
@@ -60,7 +68,7 @@ For browser cookies and CSRF, see the
 | `POST /api/v1/users` | ADMIN | Creates a USER |
 | `GET /api/v1/users/{id}` | Same USER or ADMIN | Gets a user |
 | `GET /api/v1/users/findUserByIdWithSelectedColumns/{id}` | Same USER or ADMIN | Gets selected fields |
-| `PUT /api/v1/users/{id}` | Same USER or ADMIN | Updates email and optional active status; cannot change a password |
+| `PUT /api/v1/users/{id}` | Same USER or ADMIN | Updates optional active status; cannot change email or password |
 | `DELETE /api/v1/users/{id}` | Same USER or ADMIN | Soft-deletes the user |
 
 “Same USER” means the authenticated account ID must match the `{id}` in the
@@ -78,10 +86,14 @@ User creation expects JSON:
 }
 ```
 
-Passwords must be 8–72 characters. Public registration always creates an
-active USER. The user-management `PUT` endpoint accepts `email` and optional
-`isActive`; including a `password` is rejected. Self-service password changes
-require an authenticated USER or ADMIN session and the current password:
+Passwords must be 8–72 characters. Public registration creates an active USER
+whose email must be verified before login. Verification links expire after the
+configured duration (24 hours by default) and can only be used once. The
+resend endpoint responds with `202 Accepted` whether or not an account needs
+verification. User-management `PUT` accepts optional `isActive`; email changes
+must use the dedicated confirmation flow, and including a `password` is
+rejected. Self-service password changes require an authenticated USER or ADMIN
+session and the current password:
 
 ```http
 POST /api/v1/auth/password/change
@@ -109,6 +121,15 @@ both dataset matches and never logs the submitted password.
 Validation errors identify the affected field and a safe reason; rejected
 values, including passwords, are not included in API responses or application
 logs.
+
+The verification `GET` only renders a confirmation form; the `POST` consumes
+the token so link scanners do not verify accounts merely by following links.
+The verification `POST` is exempt from CSRF because possession of its
+single-use token is the proof of intent. Email-change requests leave the
+current address active until the new address is confirmed; completing a change
+revokes the user's active sessions. Password changes, completed email changes,
+and new sessions send security notifications after the database transaction
+commits.
 
 Responses use an envelope. Successful responses contain fields such as
 `httpCode`, `message`, `success`, and `data`. Errors contain `httpCode`,

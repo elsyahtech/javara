@@ -88,6 +88,8 @@ bootstrap_admin_password="$(read_secret 'Initial administrator password')"
 bootstrap_admin_password_confirm="$(read_secret 'Confirm initial administrator password')"
 token_transport="$(read_value 'Token transport (cookie/bearer)' 'cookie')"
 application_timezone="$(read_value 'Application timezone (IANA)' 'UTC')"
+smtp_host="$(read_value 'SMTP host' 'smtp.gmail.com')"
+smtp_port="$(read_value 'SMTP port' '587')"
 signing_key="$(generate_signing_key)"
 
 validate_host "$postgres_host"
@@ -96,6 +98,8 @@ validate_database_name "$postgres_db"
 validate_time_zone "$application_timezone"
 validate_host "$redis_host"
 validate_port "$redis_port"
+validate_host "$smtp_host"
+validate_port "$smtp_port"
 validate_admin_credentials \
     "$bootstrap_admin_email" \
     "$bootstrap_admin_password" \
@@ -147,6 +151,17 @@ server:
 spring:
   profiles:
     active: local
+  mail:
+    host: $(yaml_quote "$smtp_host")
+    port: ${smtp_port}
+    username: \${SMTP_USERNAME}
+    password: \${SMTP_APP_PASSWORD}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
   application:
     name: javara-postgres
   lifecycle:
@@ -171,6 +186,10 @@ spring:
     open-in-view: false
 app:
   time-zone: $(yaml_quote "$application_timezone")
+  email:
+    enabled: true
+    verification-token-ttl: 24h
+    public-base-url: http://localhost:8080
   web:
     cors:
       enabled: false

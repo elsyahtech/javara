@@ -1,5 +1,9 @@
 app:
   time-zone: UTC
+  email:
+    enabled: true
+    verification-token-ttl: 24h
+    public-base-url: http://localhost:8080
   security:
     password-policy:
       enabled: true

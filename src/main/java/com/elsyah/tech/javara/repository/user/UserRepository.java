@@ -66,6 +66,8 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
      */
     boolean existsByEmailAndIdNot(String email, UUID id);
 
+    boolean existsByPendingEmailAndIdNot(String pendingEmail, UUID id);
+
     /**
      * Finds a user by their email.
      *

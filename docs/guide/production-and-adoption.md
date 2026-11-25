@@ -14,6 +14,7 @@ your product before using real accounts or sensitive data.
 - Password hashing and legacy-hash upgrade support
 - USER/ADMIN authorization and same-user checks for ID-based operations
 - Redis-based per-IP limits for login, registration, and refresh
+- SMTP email verification for public registrations and security notifications
 - Configurable common and compromised-password checks using operator-managed
   offline datasets
 - Unit and isolated PostgreSQL/Redis integration tests
@@ -24,7 +25,9 @@ The current service does not provide:
 
 - Organization or tenant isolation
 - Business-specific roles, permissions, or approval workflows
-- Email verification, password recovery, or multi-factor authentication
+- Password recovery or multi-factor authentication
+- A generic response for duplicate public registrations; an existing email
+  still receives a conflict response
 - Audit history for administrator actions
 - A PATCH endpoint or versioned API beyond `/api/v1`
 - A complete health/metrics and operational monitoring solution
@@ -39,6 +42,24 @@ your business requires invitation-only or administrator-created accounts,
 add and test that control before exposing the service.
 
 ## Before production
+
+### Email delivery
+
+Public registrations cannot sign in until email verification succeeds.
+Existing accounts and bootstrap/admin-created accounts remain verified.
+Configure SMTP credentials through a secret manager or environment variables,
+set `app.email.public-base-url` to the public HTTPS address, and activate a
+production profile. Startup rejects missing SMTP configuration, insecure
+production transport, or an HTTP public URL with an actionable error.
+
+Verification links contain a single-use token in the query string. Redact the
+`token` parameter from reverse-proxy and access logs. Delivery happens after
+the database transaction commits; SMTP errors are logged without message
+contents, but there is no durable outbox or retry mechanism yet. Registration
+verification can be requested again, while password-change, email-change, and
+new-session security notices may be lost during an SMTP outage. Monitor mail
+delivery failures and plan durable delivery before relying on these notices as
+an operational alert.
 
 ### Password policy datasets
 

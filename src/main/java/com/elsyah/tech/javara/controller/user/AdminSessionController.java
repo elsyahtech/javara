@@ -15,17 +15,23 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.elsyah.tech.javara.request.auth.SessionReauthRequest;
+import com.elsyah.tech.javara.request.auth.EmailChangeRequest;
 import com.elsyah.tech.javara.response.common.ApiResponse;
 import com.elsyah.tech.javara.service.auth.SessionManagementService;
 import com.elsyah.tech.javara.service.common.ServiceResult;
+import com.elsyah.tech.javara.service.user.UserService;
 
 @RestController
 @RequestMapping("/api/v1/admin/users")
 public class AdminSessionController {
     private final SessionManagementService sessionManagementService;
+    private final UserService userService;
 
-    public AdminSessionController(SessionManagementService sessionManagementService) {
+    public AdminSessionController(
+            SessionManagementService sessionManagementService,
+            UserService userService) {
         this.sessionManagementService = sessionManagementService;
+        this.userService = userService;
     }
 
     @PostMapping("/{userId}/sessions/terminate")
@@ -44,5 +50,25 @@ public class AdminSessionController {
         }
         return ResponseEntity.status(result.status())
                 .body(ApiResponse.success(result.status(), result.message(), result.data()));
+    }
+
+    @PostMapping("/{userId}/email/change")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<Void>> requestUserEmailChange(
+            @AuthenticationPrincipal Jwt principal,
+            @PathVariable UUID userId,
+            @Valid @RequestBody EmailChangeRequest request) {
+        ServiceResult<Void> result = userService.requestEmailChange(
+                UUID.fromString(principal.getSubject()),
+                userId,
+                request.currentPassword(),
+                request.newEmail(),
+                true);
+        if (result.isError()) {
+            return ResponseEntity.status(result.status())
+                    .body(ApiResponse.failure(result.status(), result.message()));
+        }
+        return ResponseEntity.status(result.status())
+                .body(ApiResponse.success(result.status(), result.message(), null));
     }
 }

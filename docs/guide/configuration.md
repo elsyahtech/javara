@@ -38,6 +38,51 @@ Use separate credentials and service instances for development, testing, and
 production. Do not use the dedicated integration-test database as the
 application database.
 
+## Email delivery and verification
+
+Email delivery is enabled by default because public registrations require
+email verification. Configure a provider-neutral SMTP connection in
+`config/application.yml`; for example, Gmail can be used for local or
+low-volume testing with an App Password:
+
+```yaml
+spring:
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${SMTP_USERNAME}
+    password: ${SMTP_APP_PASSWORD}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+app:
+  email:
+    enabled: true
+    from-address: ${SMTP_USERNAME}
+    verification-token-ttl: 24h
+    public-base-url: https://api.example.com
+```
+
+Provide `SMTP_USERNAME` and `SMTP_APP_PASSWORD` through your environment or
+secret manager; never put SMTP credentials in Git, a committed YAML file, or
+logs. `make setup` and `make install` ask for SMTP host and port and write
+credential placeholders, but do not collect or store the credentials. Their
+generated public base URL is `http://localhost:8080`; replace it with the
+externally reachable HTTPS URL before using a production-like profile.
+
+At startup, JAVARA fails with an actionable message if email is enabled but
+the SMTP host, sender address, or a required authentication credential is
+missing. With `prod`, `production`, or `staging`, email cannot be disabled,
+SMTP must use STARTTLS or SSL, and `app.email.public-base-url` must use HTTPS.
+Verification tokens are single-use, stored only as SHA-256 hashes, and expire
+after `app.email.verification-token-ttl` (24 hours by default).
+
+Verification URLs contain the token in a query parameter. Configure reverse
+proxy and access logs to redact the `token` parameter. Email is sent after the
+database transaction commits; delivery failures are logged without message
+contents, but there is currently no durable outbox or automatic retry.
+Registration verification can be requested again through the resend endpoint.
+
 ## Initial ADMIN account
 
 The bootstrap settings are:

@@ -34,6 +34,10 @@ configure_auth_bootstrap() {
     token_transport="${token_transport:-cookie}"
     read -r -p "Application timezone (IANA) [UTC]: " application_timezone
     application_timezone="${application_timezone:-UTC}"
+    read -r -p "SMTP host [smtp.gmail.com]: " smtp_host
+    smtp_host="${smtp_host:-smtp.gmail.com}"
+    read -r -p "SMTP port [587]: " smtp_port
+    smtp_port="${smtp_port:-587}"
     if [[ ! "$bootstrap_admin_email" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]]; then
         printf '%s\n' "Initial administrator email is invalid." >&2
         exit 1
@@ -45,6 +49,15 @@ configure_auth_bootstrap() {
     fi
     if [[ "$token_transport" != "bearer" && "$token_transport" != "cookie" ]]; then
         printf '%s\n' "Token transport must be bearer or cookie." >&2
+        exit 1
+    fi
+    if [[ ! "$smtp_host" =~ ^[A-Za-z0-9.-]+$ ]]; then
+        printf '%s\n' "SMTP host is invalid." >&2
+        exit 1
+    fi
+    if [[ ! "$smtp_port" =~ ^[0-9]{1,5}$ ]] \
+            || (( 10#$smtp_port < 1 || 10#$smtp_port > 65535 )); then
+        printf '%s\n' "SMTP port must be between 1 and 65535." >&2
         exit 1
     fi
     validate_time_zone "$application_timezone"
@@ -294,6 +307,17 @@ server:
 spring:
   profiles:
     active: local
+  mail:
+    host: $(yaml_quote "$smtp_host")
+    port: ${smtp_port}
+    username: \${SMTP_USERNAME}
+    password: \${SMTP_APP_PASSWORD}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
   application:
     name: javara-postgres
   lifecycle:
@@ -317,6 +341,10 @@ spring:
     open-in-view: false
 app:
   time-zone: $(yaml_quote "$application_timezone")
+  email:
+    enabled: true
+    verification-token-ttl: 24h
+    public-base-url: http://localhost:8080
   web:
     cors:
       enabled: false

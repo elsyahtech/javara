@@ -1,4 +1,11 @@
 app:
+  email:
+    enabled: false
   security:
     password-policy:
       enabled: false
+spring:
+  mail:
+    host: localhost
+    username: test
+    password: test

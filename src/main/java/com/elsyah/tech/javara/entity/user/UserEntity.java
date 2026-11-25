@@ -48,6 +48,12 @@ public class UserEntity {
     @Column (name = "is_active", nullable = false)
     private Boolean isActive = true;
 
+    @Column(name = "email_verified", nullable = false)
+    private boolean emailVerified = true;
+
+    @Column(name = "pending_email")
+    private String pendingEmail;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 16)
     private UserRole role = UserRole.USER;
@@ -84,6 +90,12 @@ public class UserEntity {
     /* Getters and setters for the fields. These methods allow access to the private fields of the class. */
     public Boolean getIsActive() { return isActive; }
     public void setIsActive(Boolean isActive) { this.isActive = isActive; }
+
+    public boolean isEmailVerified() { return emailVerified; }
+    public void setEmailVerified(boolean emailVerified) { this.emailVerified = emailVerified; }
+
+    public String getPendingEmail() { return pendingEmail; }
+    public void setPendingEmail(String pendingEmail) { this.pendingEmail = pendingEmail; }
 
     public UserRole getRole() { return role; }
     public void setRole(UserRole role) { this.role = role; }

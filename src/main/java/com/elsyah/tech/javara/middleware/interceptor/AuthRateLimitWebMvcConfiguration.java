@@ -23,14 +23,20 @@ import com.elsyah.tech.javara.middleware.ratelimit.SessionReauthRateLimitPropert
 public class AuthRateLimitWebMvcConfiguration implements WebMvcConfigurer {
     private static final String LOGIN_PATH = "/api/v1/auth/login";
     private static final String REGISTER_PATH = "/api/v1/auth/register";
+    private static final String EMAIL_VERIFICATION_RESEND_PATH =
+            "/api/v1/auth/email/verification/resend";
+    private static final String EMAIL_VERIFICATION_PATH = "/api/v1/auth/email/verify";
     private static final String REFRESH_PATH = "/api/v1/auth/refresh";
     private static final String PASSWORD_CHANGE_PATH = "/api/v1/auth/password/change";
+    private static final String EMAIL_CHANGE_PATH = "/api/v1/auth/email/change";
     private static final String SESSION_TERMINATE_PATH =
             "/api/v1/auth/sessions/*/terminate";
     private static final String SESSION_TERMINATE_ALL_PATH =
             "/api/v1/auth/sessions/terminate-all";
     private static final String ADMIN_SESSION_TERMINATE_PATH =
             "/api/v1/admin/users/*/sessions/terminate";
+    private static final String ADMIN_EMAIL_CHANGE_PATH =
+            "/api/v1/admin/users/*/email/change";
 
     private final AuthRateLimitInterceptor rateLimitInterceptor;
     private final LoginRateLimitProperties loginProperties;
@@ -53,21 +59,25 @@ public class AuthRateLimitWebMvcConfiguration implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        List<String> paths = new ArrayList<>(7);
+        List<String> paths = new ArrayList<>(10);
         if (loginProperties.enabled()) {
             paths.add(LOGIN_PATH);
         }
         if (registerProperties.enabled()) {
             paths.add(REGISTER_PATH);
+            paths.add(EMAIL_VERIFICATION_RESEND_PATH);
+            paths.add(EMAIL_VERIFICATION_PATH);
         }
         if (refreshProperties.enabled()) {
             paths.add(REFRESH_PATH);
         }
         if (sessionReauthProperties.enabled()) {
             paths.add(PASSWORD_CHANGE_PATH);
+            paths.add(EMAIL_CHANGE_PATH);
             paths.add(SESSION_TERMINATE_PATH);
             paths.add(SESSION_TERMINATE_ALL_PATH);
             paths.add(ADMIN_SESSION_TERMINATE_PATH);
+            paths.add(ADMIN_EMAIL_CHANGE_PATH);
         }
         if (!paths.isEmpty()) {
             registry.addInterceptor(rateLimitInterceptor).addPathPatterns(paths);

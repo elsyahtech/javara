@@ -40,6 +40,7 @@ import com.elsyah.tech.javara.service.auth.AccessTokenService;
 import com.elsyah.tech.javara.service.auth.AuthService;
 import com.elsyah.tech.javara.service.auth.AuthServiceResult;
 import com.elsyah.tech.javara.service.common.ServiceResult;
+import com.elsyah.tech.javara.service.email.EmailNotificationService;
 import com.elsyah.tech.javara.service.user.UserService;
 
 class AuthServiceTests {
@@ -282,6 +283,7 @@ class AuthServiceTests {
                         "ACCESS_TOKEN",
                         "REFRESH_TOKEN"),
                 new SessionProperties(null, null, null),
+                mock(EmailNotificationService.class),
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
