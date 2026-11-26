@@ -2,6 +2,7 @@ package com.elsyah.tech.javara.utils.security;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Collection;
 import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -104,6 +105,13 @@ public class PasswordHashService {
         } catch (IllegalArgumentException exception) {
             return false;
         }
+    }
+
+    public boolean matchesAny(String rawPassword, Collection<String> storedPasswords) {
+        return rawPassword != null
+                && storedPasswords != null
+                && storedPasswords.stream()
+                        .anyMatch(storedPassword -> matches(rawPassword, storedPassword));
     }
 
     public boolean matchesDummyPassword(String rawPassword) {

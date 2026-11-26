@@ -63,17 +63,34 @@ app:
     public-base-url: https://api.example.com
 ```
 
-Provide `SMTP_USERNAME` and `SMTP_APP_PASSWORD` through your environment or
-secret manager; never put SMTP credentials in Git, a committed YAML file, or
-logs. `make setup` and `make install` ask for SMTP host and port and write
-credential placeholders, but do not collect or store the credentials. Their
-generated public base URL is `http://localhost:8080`; replace it with the
+`make setup` asks for the SMTP host, port, username, and App Password, then
+writes the credentials directly into the ignored local `config/application.yml`.
+The App Password is entered without terminal echo. `make install` asks only for
+the host and port and writes credential placeholders; for that flow, provide
+`SMTP_USERNAME` and `SMTP_APP_PASSWORD` through the environment/secret manager
+or replace the placeholders locally.
+
+The local YAML option stores credentials as plaintext. The `config/` Git ignore
+rule prevents accidental tracking; it does not encrypt the file or protect it
+from local users, backups, or file-sharing tools. If storing credentials there,
+restrict file access (for example, `chmod 600 config/application.yml`), use a
+Gmail App Password rather than the account password, keep the file out of
+backups/screenshots/logs and shared folders, and rotate the App Password if the
+file may have been exposed. Verify the ignore rule with
+`git check-ignore -v config/application.yml`; never force-add this file. For
+production, use a managed secret store rather than plaintext YAML.
+
+The generated public base URL is `http://localhost:8080`; replace it with the
 externally reachable HTTPS URL before using a production-like profile.
 
 At startup, JAVARA fails with an actionable message if email is enabled but
 the SMTP host, sender address, or a required authentication credential is
 missing. With `prod`, `production`, or `staging`, email cannot be disabled,
 SMTP must use STARTTLS or SSL, and `app.email.public-base-url` must use HTTPS.
+Automated tests use the isolated `src/test/resources/application.yml`
+configuration and do not load SMTP credentials from `config/application.yml`.
+Email-specific tests use a test delivery implementation rather than a live SMTP
+provider.
 Verification tokens are single-use, stored only as SHA-256 hashes, and expire
 after `app.email.verification-token-ttl` (24 hours by default).
 

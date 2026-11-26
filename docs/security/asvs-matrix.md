@@ -6,7 +6,7 @@
 |---|---|
 | Standard | OWASP Application Security Verification Standard (ASVS) v5.0.0 |
 | Requested target | Level 3 |
-| Assessment status | In progress; 8 requirements `Fail`, 13 `Pending`, 324 `Not assessed`, none `Pass`; see [assessment record](assessment/README.md) |
+| Assessment status | In progress; 6 requirements `Fail`, 15 `Pending`, 324 `Not assessed`, none `Pass`; see [assessment record](assessment/README.md) |
 | Assessor and assessment date | To be completed |
 | Intended use | Reusable JAVARA baseline for banking, finance/fintech, energy, and startup solutions |
 | Product objective | Modular, configurable, secure foundation for multi-company solutions; not yet assessed |
@@ -39,10 +39,10 @@ excluded by default; raise any genuine applicability issue with the Auditor
 for an explicit decision rather than silently marking it `Not applicable`.
 
 The initial V6/V7 source review recorded 21 requirements as `Fail`. Following
-worktree remediation and local verification, the current disposition is 8
-`Fail`, 13 `Pending` retest/evidence, and 324 `Not assessed`. No requirement is
-currently marked `Pass` or excluded. The current review includes uncommitted
-changes; see the [authentication and session management
+remediation in commit `b009b8a` and local verification, the current disposition
+is 6 `Fail`, 15 `Pending` retest/evidence, and 324 `Not assessed`. No
+requirement is currently marked `Pass` or excluded. See the
+[authentication and session management
 review](assessment/authentication-session-review.md) for scope, evidence, and
 remaining gaps.
 
@@ -269,10 +269,10 @@ It is not endorsed by OWASP.
 | `v5.0.0-V6.3.8` | L3 | In scope | Fail | [AUTH-08](assessment/authentication-session-review.md#auth-08) | Owner TBD; test registration against account enumeration. |
 | `v5.0.0-V6.4.1` | L1 | Pending | Not assessed |  |  |
 | `v5.0.0-V6.4.2` | L1 | Pending | Not assessed |  |  |
-| `v5.0.0-V6.4.3` | L2 | In scope | Fail | [AUTH-09](assessment/authentication-session-review.md#auth-09) | Owner TBD; verify secure recovery without bypassing factors. |
+| `v5.0.0-V6.4.3` | L2 | In scope | Pending | [AUTH-09](assessment/authentication-session-review.md#auth-09) | Local recovery succeeded with a new password; previously invalidated password was rejected without consuming the link. Requirement-specific coverage remains. |
 | `v5.0.0-V6.4.4` | L2 | Pending | Not assessed |  |  |
 | `v5.0.0-V6.4.5` | L3 | Pending | Not assessed |  |  |
-| `v5.0.0-V6.4.6` | L3 | In scope | Fail | [AUTH-10](assessment/authentication-session-review.md#auth-10) | Owner TBD; verify administrators cannot set or learn user passwords. |
+| `v5.0.0-V6.4.6` | L3 | In scope | Pending | [AUTH-10](assessment/authentication-session-review.md#auth-10) | Emergency randomization, session revocation, notice delivery, and support-authorized user recovery verified locally; complete requirement-specific review. |
 | `v5.0.0-V6.5.1` | L2 | Pending | Not assessed |  |  |
 | `v5.0.0-V6.5.2` | L2 | Pending | Not assessed |  |  |
 | `v5.0.0-V6.5.3` | L2 | Pending | Not assessed |  |  |
@@ -305,12 +305,12 @@ It is not endorsed by OWASP.
 | `v5.0.0-V7.3.1` | L2 | Pending | Not assessed |  |  |
 | `v5.0.0-V7.3.2` | L2 | In scope | Pending | [SES-03](assessment/authentication-session-review.md#ses-03) | Absolute session expiry preserved across refresh; boundary/repeated-refresh retest remains. |
 | `v5.0.0-V7.4.1` | L1 | In scope | Pending | [SES-04](assessment/authentication-session-review.md#ses-04) | Session-bound access-token validation implemented; complete revocation retest remains. |
-| `v5.0.0-V7.4.2` | L1 | In scope | Pending | [SES-05](assessment/authentication-session-review.md#ses-05) | Disable/delete session revocation implemented; complete retest remains. |
-| `v5.0.0-V7.4.3` | L2 | In scope | Pending | [SES-06](assessment/authentication-session-review.md#ses-06) | Password changes revoke sessions; multi-session retest remains. |
+| `v5.0.0-V7.4.2` | L1 | In scope | Pending | [SES-05](assessment/authentication-session-review.md#ses-05) | Local disable/delete token-revocation checks exercised; full requirement review remains. |
+| `v5.0.0-V7.4.3` | L2 | In scope | Pending | [SES-06](assessment/authentication-session-review.md#ses-06) | Local same-user multi-session password-change revocation exercised; complete requirement review remains. |
 | `v5.0.0-V7.4.4` | L2 | Pending | Not assessed |  |  |
-| `v5.0.0-V7.4.5` | L2 | In scope | Pending | [SES-07](assessment/authentication-session-review.md#ses-07) | Admin termination endpoint implemented; manual retest and audit-trail review remain. |
-| `v5.0.0-V7.5.1` | L2 | In scope | Pending | [SES-08](assessment/authentication-session-review.md#ses-08) | Re-authenticated email change and confirmation manually exercised; complete retest remains. |
-| `v5.0.0-V7.5.2` | L2 | In scope | Pending | [SES-09](assessment/authentication-session-review.md#ses-09) | Session listing exercised; termination endpoint retest remains. |
+| `v5.0.0-V7.4.5` | L2 | In scope | Pending | [SES-07](assessment/authentication-session-review.md#ses-07) | Admin termination manually exercised; audit-trail and complete requirement review remain. |
+| `v5.0.0-V7.5.1` | L2 | In scope | Pending | [SES-08](assessment/authentication-session-review.md#ses-08) | Re-authenticated email change and confirmation manually exercised; complete requirement review remains. |
+| `v5.0.0-V7.5.2` | L2 | In scope | Pending | [SES-09](assessment/authentication-session-review.md#ses-09) | Session listing and self/admin termination flows manually exercised; complete requirement review remains. |
 | `v5.0.0-V7.5.3` | L3 | In scope | Fail | [SES-10](assessment/authentication-session-review.md#ses-10) | Owner TBD; test step-up verification for sensitive operations. |
 | `v5.0.0-V7.6.1` | L2 | Pending | Not assessed |  |  |
 | `v5.0.0-V7.6.2` | L2 | Pending | Not assessed |  |  |

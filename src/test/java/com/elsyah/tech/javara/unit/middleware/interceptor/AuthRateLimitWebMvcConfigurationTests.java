@@ -44,7 +44,11 @@ class AuthRateLimitWebMvcConfigurationTests {
                         "/api/v1/auth/sessions/*/terminate",
                         "/api/v1/auth/sessions/terminate-all",
                         "/api/v1/admin/users/*/sessions/terminate",
-                        "/api/v1/admin/users/*/email/change"
+                        "/api/v1/admin/users/*/email/change",
+                        "/api/v1/admin/users/*/security/force-password-reset",
+                        "/api/v1/admin/users/*/password/recovery/authorize",
+                        "/api/v1/auth/password/reset",
+                        "/api/v1/auth/password/reset/request"
                 },
                 mapped.getIncludePathPatterns());
     }

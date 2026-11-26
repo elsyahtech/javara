@@ -467,6 +467,38 @@ class UserServiceTests {
     }
 
     @Test
+    void changePasswordRejectsPreviouslyCompromisedPassword() {
+        UserRepository repository = mock(UserRepository.class);
+        RefreshTokenRepository refreshTokenRepository = mock(RefreshTokenRepository.class);
+        PasswordHashService passwordHashService = new PasswordHashService();
+        UserEntity user = new UserEntity();
+        user.setId(uuid("user-1"));
+        user.setPassword(passwordHashService.encode("current-password"));
+        user.getCompromisedPasswordHashes()
+                .add(passwordHashService.encode("previously-compromised-password"));
+        user.setIsActive(true);
+        when(repository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+
+        ServiceResult<Void> result = new UserService(
+                repository,
+                passwordHashService,
+                refreshTokenRepository,
+                allowedPasswordPolicy(),
+                mock(EmailNotificationService.class),
+                mock(EmailVerificationService.class),
+                Clock.fixed(NOW, ZoneOffset.UTC))
+                .changePassword(
+                        user.getId(),
+                        "current-password",
+                        "previously-compromised-password");
+
+        assertEquals(HttpStatus.BAD_REQUEST, result.status());
+        assertTrue(passwordHashService.matches("current-password", user.getPassword()));
+        verify(repository, never()).saveAndFlush(any());
+        verifyNoInteractions(refreshTokenRepository);
+    }
+
+    @Test
     void changePasswordRejectsPasswordInConfiguredDenylist() {
         UserRepository repository = mock(UserRepository.class);
         RefreshTokenRepository refreshTokenRepository = mock(RefreshTokenRepository.class);

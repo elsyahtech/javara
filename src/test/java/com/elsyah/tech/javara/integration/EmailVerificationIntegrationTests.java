@@ -3,6 +3,7 @@ package com.elsyah.tech.javara.integration;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -30,9 +31,12 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.elsyah.tech.javara.entity.auth.EmailVerificationTokenEntity;
+import com.elsyah.tech.javara.entity.auth.PasswordResetTokenEntity;
 import com.elsyah.tech.javara.entity.user.UserEntity;
 import com.elsyah.tech.javara.entity.user.UserRole;
+import com.elsyah.tech.javara.repository.auth.AdminPasswordResetAuditRepository;
 import com.elsyah.tech.javara.repository.auth.EmailVerificationTokenRepository;
+import com.elsyah.tech.javara.repository.auth.PasswordResetTokenRepository;
 import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
 import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.service.auth.AuthService;
@@ -50,6 +54,7 @@ import com.elsyah.tech.javara.request.auth.LoginRequest;
         "app.security.jwt.signing-key=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
         "app.security.jwt.transport=BEARER",
         "app.security.bootstrap-admin.enabled=false",
+        "app.middleware.rate-limit.session-reauth.max-requests=100",
         "app.email.enabled=true",
         "app.email.from-address=notifications@example.com",
         "app.email.public-base-url=http://localhost:8080",
@@ -75,6 +80,12 @@ class EmailVerificationIntegrationTests extends PostgresRedisTestSupport {
     private EmailVerificationTokenRepository verificationTokenRepository;
 
     @Autowired
+    private PasswordResetTokenRepository passwordResetTokenRepository;
+
+    @Autowired
+    private AdminPasswordResetAuditRepository passwordResetAuditRepository;
+
+    @Autowired
     private PasswordHashService passwordHashService;
 
     @Autowired
@@ -91,6 +102,9 @@ class EmailVerificationIntegrationTests extends PostgresRedisTestSupport {
     @AfterEach
     void cleanUpUsers() {
         for (UUID userId : createdUserIds) {
+            passwordResetAuditRepository.deleteByActorUserId(userId);
+            passwordResetAuditRepository.deleteByTargetUserId(userId);
+            passwordResetTokenRepository.deleteByUserId(userId);
             verificationTokenRepository.deleteByUserId(userId);
             refreshTokenRepository.deleteByUserId(userId);
             userRepository.deleteById(userId);
@@ -183,6 +197,232 @@ class EmailVerificationIntegrationTests extends PostgresRedisTestSupport {
         assertEquals(user.getEmail(), notice.recipient());
     }
 
+    @Test
+    void emergencyPasswordRandomizationLocksAccountUntilSupportAuthorizedRecovery()
+            throws Exception {
+        UserEntity admin = createVerifiedUser("admin-current-password-123");
+        admin.setRole(UserRole.ADMIN);
+        userRepository.saveAndFlush(admin);
+        UserEntity target = createVerifiedUser("target-current-password-123");
+        var adminLogin = authService.login(
+                new LoginRequest(admin.getEmail(), "admin-current-password-123"));
+        var targetLogin = authService.login(
+                new LoginRequest(target.getEmail(), "target-current-password-123"));
+        assertEquals(HttpStatus.OK, adminLogin.status());
+        assertEquals(HttpStatus.OK, targetLogin.status());
+
+        String oldPasswordHash = target.getPassword();
+        mockMvc.perform(post(
+                                "/api/v1/admin/users/{userId}/security/force-password-reset",
+                                target.getId())
+                        .header("Authorization", "Bearer " + adminLogin.accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "currentPassword":"admin-current-password-123",
+                                  "reason":"Suspected credential compromise",
+                                  "notificationMessage":"We detected activity that may put your account at risk. Contact support using the verified phone number on file."
+                                }
+                                """))
+                .andExpect(status().isAccepted());
+
+        UserEntity forced = userRepository.findById(target.getId()).orElseThrow();
+        assertTrue(forced.isPasswordResetRequired());
+        assertTrue(forced.isPasswordResetSupportRequired());
+        assertNotEquals(oldPasswordHash, forced.getPassword());
+        assertEquals(
+                1,
+                passwordResetAuditRepository.findAll().stream()
+                        .filter(audit -> target.getId().equals(audit.getTargetUserId())
+                                && "EMERGENCY_RANDOMIZED".equals(audit.getAction())
+                                && "Suspected credential compromise".equals(audit.getReason()))
+                        .count());
+        mockMvc.perform(get("/api/v1/auth/sessions")
+                        .header("Authorization", "Bearer " + targetLogin.accessToken()))
+                .andExpect(status().isUnauthorized());
+        assertEquals(
+                HttpStatus.UNAUTHORIZED,
+                authService.login(new LoginRequest(
+                        target.getEmail(), "target-current-password-123")).status());
+
+        mockMvc.perform(post("/api/v1/auth/password/reset/request")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"%s"}
+                                """.formatted(target.getEmail())))
+                .andExpect(status().isAccepted());
+        assertTrue(passwordResetTokenRepository.findAll().stream()
+                .noneMatch(item -> item.getUserId().equals(target.getId())));
+        assertFalse(emailDelivery.has(EmailEventType.PASSWORD_RESET_REQUESTED));
+
+        EmailMessageEvent emergencyNotice =
+                emailDelivery.last(EmailEventType.EMERGENCY_PASSWORD_RESET);
+        assertEquals(target.getEmail(), emergencyNotice.recipient());
+        assertTrue(emergencyNotice.body().contains("We detected activity"));
+        assertFalse(emergencyNotice.body().contains("token="));
+        assertFalse(emergencyNotice.body().contains("target-current-password-123"));
+
+        mockMvc.perform(post(
+                                "/api/v1/admin/users/{userId}/password/recovery/authorize",
+                                target.getId())
+                        .header("Authorization", "Bearer " + adminLogin.accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "currentPassword":"admin-current-password-123",
+                                  "supportCaseReference":"SUP-1234"
+                                }
+                                """))
+                .andExpect(status().isAccepted());
+        assertTrue(userRepository.findById(target.getId()).orElseThrow()
+                .isPasswordResetRequired());
+
+        EmailMessageEvent resetEmail =
+                emailDelivery.last(EmailEventType.PASSWORD_RESET_SUPPORT_AUTHORIZED);
+        String token = tokenFromBody(resetEmail.body());
+        PasswordResetTokenEntity storedToken = passwordResetTokenRepository.findAll().stream()
+                .filter(item -> item.getUserId().equals(target.getId()))
+                .findFirst()
+                .orElseThrow();
+        assertStoredHashMatchesToken(storedToken, token);
+        mockMvc.perform(post("/api/v1/auth/password/reset")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("token", token)
+                        .param("newPassword", "target-current-password-123"))
+                .andExpect(status().isBadRequest())
+                .andExpect(result -> {
+                    String page = result.getResponse().getContentAsString();
+                    assertTrue(page.contains(
+                            "This password was previously invalidated during an emergency reset."));
+                    assertTrue(page.contains("name=\"newPassword\""));
+                    assertTrue(page.contains("name=\"token\" value=\"" + token + "\""));
+                    assertTrue(page.contains(">Set password</button>"));
+                    assertFalse(page.contains("target-current-password-123"));
+                });
+        assertNull(passwordResetTokenRepository.findByTokenHash(
+                storedToken.getTokenHash()).orElseThrow().getConsumedAt());
+        mockMvc.perform(get("/api/v1/auth/password/reset").param("token", token))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertTrue(result.getResponse().getContentAsString()
+                        .contains("Set password")));
+        mockMvc.perform(post("/api/v1/auth/password/reset")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("token", token)
+                        .param("newPassword", "target-new-password-456"))
+                .andExpect(status().isOk());
+
+        assertFalse(userRepository.findById(target.getId()).orElseThrow()
+                .isPasswordResetRequired());
+        assertFalse(userRepository.findById(target.getId()).orElseThrow()
+                .isPasswordResetSupportRequired());
+        assertNotNull(passwordResetTokenRepository.findByTokenHash(
+                storedToken.getTokenHash()).orElseThrow().getConsumedAt());
+        mockMvc.perform(post("/api/v1/auth/password/reset")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("token", token)
+                        .param("newPassword", "target-another-password-789"))
+                .andExpect(status().isBadRequest());
+        assertEquals(
+                HttpStatus.UNAUTHORIZED,
+                authService.login(new LoginRequest(
+                        target.getEmail(), "target-current-password-123")).status());
+        assertEquals(
+                HttpStatus.OK,
+                authService.login(new LoginRequest(
+                        target.getEmail(), "target-new-password-456")).status());
+        assertEquals(
+                HttpStatus.BAD_REQUEST,
+                userService.changePassword(
+                        target.getId(),
+                        "target-new-password-456",
+                        "target-current-password-123").status());
+    }
+
+    @Test
+    void userInitiatedPasswordResetKeepsSessionsUntilUserCompletesReset() throws Exception {
+        UserEntity target = createVerifiedUser("target-current-password-123");
+        var targetLogin = authService.login(
+                new LoginRequest(target.getEmail(), "target-current-password-123"));
+
+        mockMvc.perform(post("/api/v1/auth/password/reset/request")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"%s"}
+                                """.formatted(target.getEmail())))
+                .andExpect(status().isAccepted());
+
+        assertFalse(userRepository.findById(target.getId()).orElseThrow()
+                .isPasswordResetRequired());
+        mockMvc.perform(get("/api/v1/auth/sessions")
+                        .header("Authorization", "Bearer " + targetLogin.accessToken()))
+                .andExpect(status().isOk());
+        assertEquals(
+                HttpStatus.OK,
+                authService.login(new LoginRequest(
+                        target.getEmail(), "target-current-password-123")).status());
+
+        String token = tokenFromBody(
+                emailDelivery.last(EmailEventType.PASSWORD_RESET_REQUESTED).body());
+        mockMvc.perform(post("/api/v1/auth/password/reset")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("token", token)
+                        .param("newPassword", "target-new-password-456"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/auth/sessions")
+                        .header("Authorization", "Bearer " + targetLogin.accessToken()))
+                .andExpect(status().isUnauthorized());
+        assertEquals(
+                HttpStatus.UNAUTHORIZED,
+                authService.login(new LoginRequest(
+                        target.getEmail(), "target-current-password-123")).status());
+        assertEquals(
+                HttpStatus.OK,
+                authService.login(new LoginRequest(
+                        target.getEmail(), "target-new-password-456")).status());
+    }
+
+    @Test
+    void expiredInvalidAndShortPasswordResetAttemptsAreRejected() throws Exception {
+        UserEntity target = createVerifiedUser("target-current-password-123");
+        mockMvc.perform(post("/api/v1/auth/password/reset/request")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"%s"}
+                                """.formatted(target.getEmail())))
+                .andExpect(status().isAccepted());
+
+        String token = tokenFromBody(
+                emailDelivery.last(EmailEventType.PASSWORD_RESET_REQUESTED).body());
+        PasswordResetTokenEntity storedToken = passwordResetTokenRepository.findAll().stream()
+                .filter(item -> item.getUserId().equals(target.getId()))
+                .findFirst()
+                .orElseThrow();
+        mockMvc.perform(post("/api/v1/auth/password/reset")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("token", token)
+                        .param("newPassword", "short"))
+                .andExpect(status().isBadRequest());
+        assertNull(passwordResetTokenRepository.findByTokenHash(
+                storedToken.getTokenHash()).orElseThrow().getConsumedAt());
+
+        storedToken.setExpiresAt(java.time.Instant.now().minusSeconds(1));
+        passwordResetTokenRepository.saveAndFlush(storedToken);
+        mockMvc.perform(post("/api/v1/auth/password/reset")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("token", token)
+                        .param("newPassword", "target-new-password-456"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/v1/auth/password/reset")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("token", "A".repeat(43))
+                        .param("newPassword", "target-new-password-456"))
+                .andExpect(status().isBadRequest());
+        assertEquals(
+                HttpStatus.OK,
+                authService.login(new LoginRequest(
+                        target.getEmail(), "target-current-password-123")).status());
+    }
+
     private UserEntity createVerifiedUser(String password) {
         UserEntity user = new UserEntity();
         user.setId(UUID.randomUUID());
@@ -200,7 +440,7 @@ class EmailVerificationIntegrationTests extends PostgresRedisTestSupport {
         String marker = "token=";
         int tokenStart = body.indexOf(marker);
         if (tokenStart < 0) {
-            throw new AssertionError("Verification email did not contain a token link");
+            throw new AssertionError("Email did not contain a token link");
         }
         int valueStart = tokenStart + marker.length();
         int valueEnd = body.indexOf('\n', valueStart);
@@ -209,6 +449,16 @@ class EmailVerificationIntegrationTests extends PostgresRedisTestSupport {
 
     private static void assertStoredHashMatchesToken(
             EmailVerificationTokenEntity storedToken,
+            String rawToken) throws Exception {
+        String hash = java.util.HexFormat.of().formatHex(
+                java.security.MessageDigest.getInstance("SHA-256")
+                        .digest(rawToken.getBytes(StandardCharsets.UTF_8)));
+        assertTrue(storedToken.getTokenHash().matches("[0-9a-f]{64}"));
+        org.junit.jupiter.api.Assertions.assertEquals(hash, storedToken.getTokenHash());
+    }
+
+    private void assertStoredHashMatchesToken(
+            PasswordResetTokenEntity storedToken,
             String rawToken) throws Exception {
         String hash = java.util.HexFormat.of().formatHex(
                 java.security.MessageDigest.getInstance("SHA-256")
@@ -242,6 +492,10 @@ class EmailVerificationIntegrationTests extends PostgresRedisTestSupport {
                     .orElseThrow(() -> new AssertionError("Missing email event " + type));
         }
 
+        boolean has(EmailEventType type) {
+            return sentMessages.stream().anyMatch(message -> message.type() == type);
+        }
+
         void clear() {
             sentMessages.clear();
         }
@@ -252,6 +506,15 @@ class EmailVerificationIntegrationTests extends PostgresRedisTestSupport {
             }
             if (subject.contains("Confirm your JAVARA")) {
                 return EmailEventType.EMAIL_CHANGE_VERIFICATION;
+            }
+            if (subject.contains("security alert: password reset")) {
+                return EmailEventType.EMERGENCY_PASSWORD_RESET;
+            }
+            if (subject.contains("account recovery authorized")) {
+                return EmailEventType.PASSWORD_RESET_SUPPORT_AUTHORIZED;
+            }
+            if (subject.contains("Reset your JAVARA password")) {
+                return EmailEventType.PASSWORD_RESET_REQUESTED;
             }
             if (subject.contains("password changed")) {
                 return EmailEventType.PASSWORD_CHANGED;

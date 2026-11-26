@@ -35,5 +35,20 @@ if [[ -z "$java_bin" ]]; then
     exit 1
 fi
 
-export SPRING_CONFIG_ADDITIONALLOCATION="optional:file:./config/"
+spring_boot_run=false
+for argument in "$@"; do
+    if [[ "$argument" == "spring-boot:run" ]]; then
+        spring_boot_run=true
+        break
+    fi
+done
+
+if [[ "$spring_boot_run" == "true" ]]; then
+    unset SPRING_CONFIG_LOCATION
+    export SPRING_CONFIG_ADDITIONALLOCATION="optional:file:./config/"
+else
+    unset SPRING_CONFIG_ADDITIONALLOCATION
+    export SPRING_CONFIG_LOCATION="classpath:/"
+fi
+
 exec ./mvnw "$@"

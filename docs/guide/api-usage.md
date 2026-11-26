@@ -53,8 +53,13 @@ For browser cookies and CSRF, see the
 | `GET /api/v1/auth/email/verify?token=...` | Public | Displays a confirmation form; does not consume the token |
 | `POST /api/v1/auth/email/verify` | Public | Consumes a single-use verification token |
 | `POST /api/v1/auth/email/verification/resend` | Public | Requests another registration verification email |
+| `POST /api/v1/auth/password/reset/request` | Public | User requests a password-reset link; response is generic to prevent account enumeration |
+| `GET /api/v1/auth/password/reset?token=...` | Public | Displays a password-reset form; does not consume the token |
+| `POST /api/v1/auth/password/reset` | Public | Accepts a URL-encoded one-time token and new password |
 | `POST /api/v1/auth/email/change` | Authenticated USER or ADMIN | Requires the current password; confirms the new address before changing it |
 | `POST /api/v1/admin/users/{userId}/email/change` | ADMIN | Requires the administrator's current password and confirmation of the new address |
+| `POST /api/v1/admin/users/{userId}/security/force-password-reset` | ADMIN | Emergency action: replaces the password with an undisclosed random secret, revokes sessions, locks sign-in, and emails an admin-authored notice |
+| `POST /api/v1/admin/users/{userId}/password/recovery/authorize` | ADMIN | After out-of-band support verification, sends a one-time link for the user to choose a password |
 | `POST /api/v1/auth/login` | Public | Returns tokens or sets cookies; unverified accounts receive the generic invalid-credentials response |
 | `POST /api/v1/auth/refresh` | Public | Rotates a refresh token |
 | `POST /api/v1/auth/logout` | Current refresh token | Revokes that session; cookie mode also requires a CSRF token |
@@ -113,6 +118,83 @@ that submitted the request. Sign in again using the new password. Cookie
 transport also clears the access and refresh cookies. The endpoint shares the
 default re-authentication rate limit of five requests per 15 minutes per
 client address.
+
+Forgotten-password recovery is initiated by the user:
+
+```http
+POST /api/v1/auth/password/reset/request
+Content-Type: application/json
+```
+
+```json
+{
+  "email": "person@example.com"
+}
+```
+
+The response is always `202 Accepted` and does not reveal whether the address
+has an account. Eligible users receive a single-use link at their verified
+address. The user chooses the new password; successful completion applies the
+password policy and revokes all active sessions.
+
+For an emergency such as a suspected password compromise, an administrator can
+invalidate the credential immediately. This action requires the administrator's
+current password, an incident reason, and a plain-text notice for the user:
+
+```http
+POST /api/v1/admin/users/{userId}/security/force-password-reset
+Content-Type: application/json
+Authorization: Bearer <admin-access-token>
+```
+
+```json
+{
+  "currentPassword": "admin-current-secret",
+  "reason": "Suspected credential compromise",
+  "notificationMessage": "We detected activity that may put your account at risk. Contact support using the verified phone number on file."
+}
+```
+
+JAVARA replaces the credential with a randomly generated secret that is never
+shown to the administrator or user, revokes all sessions, blocks sign-in, and
+sends a security notice to the user's verified address. The notice includes the
+administrator-authored plain-text message, but never includes the generated
+secret or a reset link. The reset-required state also prevents the user from
+bypassing support by requesting a normal reset.
+
+After support verifies the user's identity through a separate trusted channel,
+an administrator records the support case reference and authorizes recovery:
+
+```http
+POST /api/v1/admin/users/{userId}/password/recovery/authorize
+Content-Type: application/json
+Authorization: Bearer <admin-access-token>
+```
+
+```json
+{
+  "currentPassword": "admin-current-secret",
+  "supportCaseReference": "SUP-1234"
+}
+```
+
+This sends a one-time reset link to the verified address. It does not unlock the
+account by itself; the user must choose a password through the link. Links
+expire after one hour. Reset-token values are stored as hashes, are never
+returned by the API, and must be redacted from query-string logs and monitoring.
+The password that was invalidated by the emergency reset is retained as a
+one-way hash and rejected by later password changes and resets.
+If a password is rejected, the reset page explains that it was invalidated for
+security reasons and keeps the recovery form available so the user can enter a
+different password without requesting a new link.
+The reset page uses `no-store` and `no-referrer` headers; email-link scanners
+only display the form and do not consume the token. Emergency actions,
+support authorizations, and reset completions are audited without storing
+passwords or reset-token values. If an authorization link expires or SMTP
+delivery fails, support must verify the case again and issue a new authorization.
+If the user's current email is unverified, the emergency lock still applies,
+but no email is sent; support must restore a verified contact channel before
+authorizing recovery.
 
 An incorrect current password returns `401 Unauthorized`; reusing the current
 password or selecting a password in the configured common/breached-password

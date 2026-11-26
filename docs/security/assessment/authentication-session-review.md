@@ -8,13 +8,13 @@ penetration test, certification, or production-readiness claim.
 
 - Source baseline: `aacdb7858552fe2cfd35eb40ae04808d0e33c120`, as pinned in
   [assessment scope](scope.md).
-- Review checkout: `0a1c7108a4b5ba74cbb2c99eb36d943464b75381`; changes from the
-  source baseline at that point were assessment documentation only.
-- Current review date: 2026-11-26. Remediation evidence below reflects the
-  current, uncommitted worktree and local manual tests, not a new pinned source
-  commit.
+- Initial assessment documentation checkout: `0a1c7108a4b5ba74cbb2c99eb36d943464b75381`;
+  changes from the source baseline at that point were assessment
+  documentation only.
+- Current review date: 2026-11-26. Remediation evidence below reflects commit
+  `b009b8a` and local manual tests, not an independent reassessment.
 - Initial baseline: 21 requirements marked `Fail`. Current disposition: 8
-  `Fail`, 13 `Pending` retest/evidence, and 324 `Not assessed`.
+  `Fail`, 15 `Pending` retest/evidence, and 324 `Not assessed`.
 - No requirement is marked `Pass` or excluded.
 
 The historical findings below are confirmed for the pinned baseline. Current
@@ -43,25 +43,133 @@ the complete Maven test suite also passed: 198 tests, 0 failures, 0 errors,
 Local manual API checks on 2026-11-26, using the local setup and Gmail SMTP,
 observed:
 
-- Public registration returned `201`; login before email verification returned
-  the generic `401`; verification resend returned `202`.
-- The verification confirmation page completed email verification, after
-  which login succeeded.
-- Self-service password change returned `200`; session listing returned
-  `200`; refresh returned `200`; and logout returned `200` when given the
-  refresh token in the request body.
-- Self-service email change required the current password, delivered a
-  confirmation email to the new address, and login with the new address
-  succeeded after confirmation.
+- In the registration-verification-login flow, public registration returned
+  `201` and the verification email was delivered. Login before verification
+  returned `401` with the generic `"Invalid email or password"` response.
+  After following the verification link, login returned `200` and issued
+  access and refresh tokens. A separate verification-resend request returned
+  `202`. Account identifiers and credentials are omitted.
+- After verification, a login attempt with an incorrect password returned
+  `401` and the same generic `"Invalid email or password"` response.
+- A login attempt for an account already marked inactive returned `401` with
+  the generic `"Invalid email or password"` response. This confirms inactive
+  accounts cannot log in.
+- The user clarified that a protected sessions request using a token issued
+  before account deactivation was also attempted and rejected. The exact HTTP
+  status was not restated in that follow-up; this is evidence of session
+  invalidation after deactivation, distinct from the user-deletion check.
+- In a single-session password-change check, session listing returned `200`;
+  changing the password from that authenticated session returned `200`; and
+  a subsequent session-list request using its pre-change access token
+  returned `401`. This confirms locally that password change invalidates the
+  current access-token session.
+- In a separate cross-account check, changing the USER account's password
+  returned `200`; that account's pre-change access token then received `401`,
+  while the separate ADMIN account could still access its own sessions
+  endpoint. This confirms the password change invalidates the changed user's
+  session without disrupting an unrelated account.
+- The user clarified that a separate password-change test used two active
+  sessions belonging to the same USER account; both pre-change sessions were
+  invalidated successfully. The precise response status for the second
+  session was not restated.
+- After that change, login with the old password returned `401` with the
+  generic `"Invalid email or password"` response, while login with the new
+  password returned `200` and issued fresh tokens. This confirms the old
+  password was no longer accepted and the new password was active.
+- Logging out the session created by that new-password login succeeded; a
+  subsequent session-list request using its access token was rejected. This
+  further confirms locally that logout invalidates the session. Exact HTTP
+  status codes for this check were not provided.
+- Separately, refresh returned `200`, and logout returned `200` when given
+  the refresh token in the request body.
+- In a separate single-session check, `GET /api/v1/auth/sessions` returned
+  `200` and listed the active session. Logging out with that session's refresh
+  token returned `200`; a subsequent request to the sessions endpoint using
+  its previously issued access token returned `401`. This confirms local
+  current-session logout invalidates access to protected endpoints. Tokens and
+  session identifiers are omitted.
+- In a local idle-timeout check, after leaving the admin session inactive for
+  more than 15 minutes, `GET /api/v1/auth/sessions` returned `401` and refresh
+  returned `401` with `"Refresh token is invalid or expired"`. Since the
+  access token also expires after 15 minutes, its `401` alone does not isolate
+  idle-timeout behavior; rejection of refresh after the idle period is the
+  relevant observation.
+- With two sessions active, `GET /api/v1/auth/sessions` returned `200` from
+  both sessions and listed both, marking the caller as `current`. Logging out
+  one session returned `200`; its access token then received `401`, while the
+  other session remained active and was the only session listed. Logging out
+  the remaining session also returned `200`, and its access token then
+  received `401`. This verifies independent session listing and per-session
+  logout locally.
+- At the configured concurrent-session limit, an additional login returned
+  `409` with `"Maximum number of active sessions reached"`. After logging out
+  one session, another login succeeded, and the session list showed five
+  active sessions. This verifies the local session cap and slot reuse.
+- In a separate two-session check, a request authenticated with one session
+  targeted the other session's ID at
+  `POST /api/v1/auth/sessions/{sessionId}/terminate`. It returned `200` with
+  one session terminated. The caller's token remained valid and listed only
+  its own session; the targeted session's access token received `401`. This
+  verifies targeted termination of another session locally. Tokens and
+  session identifiers are omitted.
+- `POST /api/v1/auth/sessions/terminate-all` returned `200` and reported four
+  sessions terminated. A subsequent request to list sessions with a
+  pre-termination access token returned `401`. This verifies local
+  all-session termination, including invalidation of the caller's session.
+- In a later repeat, the original access token had expired; refreshing the
+  still-active session returned `200`. Calling
+  `POST /api/v1/auth/sessions/terminate-all` with the newly issued access
+  token and current password then returned `200` and reported one session
+  terminated. A post-termination request using that access token has not yet
+  been reported.
+- Using an administrator account, listing users returned `200`; deleting a
+  test user returned `200` and set its deletion timestamp. A protected
+  sessions request using that user's pre-deletion access token then returned
+  `401`. Account identifiers and email addresses are omitted.
+- Using an administrator account, terminating a target user's sessions
+  returned `200` with one session terminated. A subsequent protected sessions
+  request using the target user's pre-termination access token returned `401`.
+  This verifies the local admin-initiated session-termination flow.
+- A targeted session-termination attempt later returned `429` (`Too many
+  requests`). This is consistent with the configured per-client rate limit;
+  a subsequent targeted termination succeeded as described above.
+- In a self-service email-change check, the request returned `202` and the
+  confirmation email was delivered. Its link was described as single-use and
+  expiring after 24 hours. The existing session remained active before
+  confirmation. Confirmation returned `200`; afterward, the pre-change access
+  token received `401`, login with the old email returned the generic `401`,
+  and login with the new email returned `200` with fresh tokens. This confirms
+  the local email-change, confirmation, and session-revocation flow. Email
+  addresses and the confirmation link are omitted.
+- A new-session notification email was received during local login testing.
+- The password-change security notification email was also received locally.
+- In a local SMTP-failure simulation using an unavailable loopback endpoint,
+  login still succeeded and the listener logged the `NEW_SESSION` event type
+  and `MailSendException` class without logging the message contents. This
+  verifies local failure handling and sanitized logging, not automatic retry;
+  no durable outbox or retry mechanism is implemented.
 - Initial SMTP authentication attempts failed. Delivery succeeded after the
   local SMTP credentials were corrected. This is not staging evidence; delivery
-  of password-change and new-session notices was not separately confirmed.
+  is confirmed for local tests; retry behavior and production operational
+  handling remain unverified.
+- In an emergency password-reset and recovery check, the administrator's reset
+  request returned `202`; the security notice was delivered to the user's
+  verified address. A protected sessions request using the user's pre-reset
+  session returned `401`, and login with the pre-reset password returned
+  `401` with the generic `"Invalid email or password"` response.
+- The administrator then authorized recovery. The request returned `202`, and
+  the user received a single-use recovery link with a one-hour expiry. The
+  previously invalidated password was rejected with an explanatory message;
+  the recovery form remained available for another attempt. The user set a
+  different password successfully. Login with the pre-reset password still
+  returned `401`, while login with the newly set password succeeded. Passwords,
+  tokens, account identifiers, and recipient addresses are omitted.
 
 These are local smoke-test observations, not requirement-by-requirement ASVS
 verification. Tokens, passwords, and recipient addresses are deliberately
 excluded. No production or staging environment was assessed.
 
-Current-worktree evidence references include:
+Evidence references for the committed remediation include:
 
 - Authentication and password change: [`AuthController`](../../../src/main/java/com/elsyah/tech/javara/controller/auth/AuthController.java),
   [`AuthService`](../../../src/main/java/com/elsyah/tech/javara/service/auth/AuthService.java),
@@ -79,17 +187,21 @@ Current-worktree evidence references include:
   [`EmailMessageListener`](../../../src/main/java/com/elsyah/tech/javara/service/email/EmailMessageListener.java),
   [`EmailVerificationIntegrationTests`](../../../src/test/java/com/elsyah/tech/javara/integration/EmailVerificationIntegrationTests.java),
   and [`EmailNotificationServiceTests`](../../../src/test/java/com/elsyah/tech/javara/unit/email/service/EmailNotificationServiceTests.java).
+- Emergency password reset and recovery: [`AdminPasswordResetController`](../../../src/main/java/com/elsyah/tech/javara/controller/user/AdminPasswordResetController.java),
+  [`PasswordResetService`](../../../src/main/java/com/elsyah/tech/javara/service/auth/PasswordResetService.java),
+  [`EmailVerificationIntegrationTests`](../../../src/test/java/com/elsyah/tech/javara/integration/EmailVerificationIntegrationTests.java),
+  and migration [`V8__track_compromised_password_hashes.sql`](../../../src/main/resources/db/migration/V8__track_compromised_password_hashes.sql).
 
 The review also inspected the password request/hash path, authentication and
 user controllers, token lifecycle, JWT validation, and the production/API
 guides. No production or staging environment was available or assessed.
 
-## Remediation progress in the current worktree
+## Remediation in commit `b009b8a`
 
 The assessment baseline above is historical. The following remediation is
-present in the current worktree and has not yet been independently
-re-assessed. The original matrix findings remain baseline findings; no
-requirement is being claimed as `Pass`.
+included in commit `b009b8a` and has not yet been independently re-assessed.
+The original matrix findings remain baseline findings; no requirement is being
+claimed as `Pass`.
 
 - User access tokens now carry a session identifier and are checked against
   active session state on protected requests. Logout, password changes, account
@@ -129,8 +241,9 @@ requirement is being claimed as `Pass`.
   user-update endpoint cannot change email or password; the admin email-change
   route requires the administrator's current password.
 - SMTP delivery and security-notification events are implemented for
-  verification, password changes, email changes, and new sessions. Delivery
-  occurs after commit and SMTP exceptions are logged without message contents.
+  verification, password changes, email changes, new sessions, user-requested
+  password recovery, and emergency password-reset notices. Delivery
+  occurs after commit and   SMTP exceptions are logged without message contents.
   There is no durable outbox or automatic retry, so successful delivery and
   operational handling remain incomplete evidence.
 
@@ -146,17 +259,22 @@ authenticated user request has not been load-tested. Token/timeout behavior
 and session-termination edge cases still need requirement-specific retesting.
 The configured password-data files are illustrative samples, not approved
 production datasets; provenance, licensing, freshness, coverage, and
-large-corpus performance remain open. Password-change and new-session email
-delivery were not separately confirmed, and there is no durable outbox.
+large-corpus performance remain open. Password-change email delivery has been
+confirmed locally, but there is no durable outbox.
 Context-specific password-word checks, phishing-resistant MFA, suspicious
-authentication detection, password recovery, admin password-reset workflow,
-and duplicate-registration anti-enumeration remain open.
+authentication detection, and duplicate-registration anti-enumeration remain
+open. User-initiated password recovery and administrator emergency
+randomization are implemented. Emergency randomization invalidates the
+credential, revokes sessions, locks sign-in, and sends an administrator-authored
+notice; after out-of-band support verification, the user receives a one-time
+link and chooses a new password. Automated integration coverage exists; local
+SMTP-failure recovery and requirement-specific ASVS review remain pending.
 
 ## Initial baseline findings and current disposition
 
 The evidence and gap descriptions in this table describe the pinned initial
-baseline. `Pending` means remediation is present or partially evidenced in the
-current worktree, but the complete ASVS requirement has not been verified.
+baseline. `Pending` means remediation is present or partially evidenced in
+commit `b009b8a`, but the complete ASVS requirement has not been verified.
 Only `Pass` can indicate a verified requirement; none is claimed here.
 
 ### V6 - Authentication
@@ -169,30 +287,30 @@ Only `Pass` can indicate a verified requirement; none is claimed here.
 | AUTH-04 | V6.2.12 | The baseline had no breached-password check in password creation or update. | `Pending` — offline hash lookup is implemented and tested; the sample hash file is not a production breach corpus. Source, license, coverage, freshness, and production deployment evidence are outstanding. |
 | AUTH-05 | V6.3.3 | The production guide explicitly lists multi-factor authentication as unavailable. Level 3 requires a phishing-resistant hardware-based factor unless an accepted rationale and comprehensive mitigations apply. See [production boundaries](../../guide/production-and-adoption.md). | `Fail` — phishing-resistant MFA/WebAuthn is not implemented. |
 | AUTH-06 | V6.3.5 | No mechanism was found to detect and notify users of suspicious successful or unsuccessful authentication attempts. | `Fail` — new-session notices alone do not provide suspicious-authentication detection and response. |
-| AUTH-07 | V6.3.7 | The baseline had no notification flow for authentication-detail changes. | `Pending` — password/email/new-session notification events and SMTP delivery exist. Local verification and email-change messages were received, but password/new-session delivery, durable retry/outbox, and operational handling remain unverified. |
+| AUTH-07 | V6.3.7 | The baseline had no notification flow for authentication-detail changes. | `Pending` — verification, email-change, new-session, and password-change messages were received locally; emergency-reset and recovery email paths have automated coverage. An SMTP failure was caught and logged without message contents. Durable retry/outbox and production operational evidence remain outstanding. |
 | AUTH-08 | V6.3.8 | Login uses a generic invalid-credentials message, but duplicate public registration returns HTTP 409 and `"Email already exists"`. | `Fail` — duplicate registration still reveals whether an email is registered; resend has a generic response but does not remediate registration enumeration. |
-| AUTH-09 | V6.4.3 | Password recovery is unavailable; no forgotten-password flow is implemented. | `Fail` — secure password recovery and recovery-factor protection remain unimplemented. |
-| AUTH-10 | V6.4.6 | Administrators can create a user by supplying the initial password; no user-controlled password-reset initiation flow is implemented. | `Fail` — admin password-reset workflow remains open. |
+| AUTH-09 | V6.4.3 | Users can request password recovery through a generic-response endpoint; reset tokens go only to the verified email address and users choose their own new password. | `Pending` — hashed single-use tokens, expiry, password policy enforcement, and session revocation are implemented. Local recovery succeeded with a new password; the previously invalidated password was rejected without consuming the recovery link. Requirement-specific recovery review remains. |
+| AUTH-10 | V6.4.6 | Administrators can trigger emergency credential randomization but cannot see or choose the generated credential. The action revokes sessions and blocks login until support verifies the user and authorizes user-controlled recovery. | `Pending` — automated tests and local manual checks cover emergency randomization, notice delivery, rejection of the pre-reset session and password, administrator-authorized recovery, rejection of the invalidated password, and successful user-set recovery. SMTP-failure recovery and requirement-specific review remain. |
 
 ### V7 - Session Management
 
 | Finding | Requirement | Baseline evidence and gap | Current disposition |
 |---|---|---|---|
-| SES-01 | V7.1.1 | The baseline did not document inactivity and absolute session lifetimes or the associated risk rationale. | `Pending` — 15-minute idle and 12-hour absolute limits are implemented and documented; risk rationale and requirement-specific timeout/re-authentication assessment remain outstanding. |
-| SES-02 | V7.1.2 | The baseline did not document or enforce a concurrent-session limit. | `Pending` — a five-session limit and rejection behavior are implemented and documented; limit/edge-case retesting and risk rationale remain outstanding. |
+| SES-01 | V7.1.1 | The baseline did not document inactivity and absolute session lifetimes or the associated risk rationale. | `Pending` — local refresh was rejected after more than 15 minutes of inactivity, and an automated test covers expiry beyond the 12-hour absolute lifetime. Risk rationale and complete requirement-specific timeout/re-authentication assessment remain outstanding. |
+| SES-02 | V7.1.2 | The baseline did not document or enforce a concurrent-session limit. | `Pending` — local testing confirmed the configured cap rejects an additional login with `409` and allows another login after a slot is freed. Requirement-specific edge cases and risk rationale remain outstanding. |
 | SES-03 | V7.3.2 | The baseline refresh flow could extend sessions without preserving an absolute start time. | `Pending` — session start and absolute expiry are preserved across refresh; repeated-refresh and expiry-boundary evidence needs requirement-specific review. |
-| SES-04 | V7.4.1 | The baseline revoked refresh tokens but left already-issued access JWTs usable until expiry. | `Pending` — access tokens are now tied to active server-side session state; automated coverage and local logout were exercised, but exact revocation scenarios need retesting. |
-| SES-05 | V7.4.2 | The baseline did not revoke all access/session state on user disablement or deletion. | `Pending` — account disable/delete now revoke sessions and protected requests validate session state; regression evidence exists but needs requirement-specific retesting. |
-| SES-06 | V7.4.3 | The baseline password-change flow did not end already-issued access-token sessions. | `Pending` — password change now revokes all sessions; local password change and subsequent re-authentication succeeded. Multi-session/factor-change cases still need retesting. |
-| SES-07 | V7.4.5 | The baseline had no administrator endpoint to terminate another user's sessions. | `Pending` — an admin session-termination endpoint with current-password re-authentication and authorization tests exists; manual retest and audit-trail review remain outstanding. |
+| SES-04 | V7.4.1 | The baseline revoked refresh tokens but left already-issued access JWTs usable until expiry. | `Pending` — local two-session logout, targeted termination, and all-session termination confirmed revoked access tokens receive `401`. Other revocation causes and the full requirement still need verification. |
+| SES-05 | V7.4.2 | The baseline did not revoke all access/session state on user disablement or deletion. | `Pending` — local user deletion invalidated a pre-existing access token (`401`); the user also confirmed a pre-disablement token was rejected after account deactivation, though the status was not restated. Full requirement-specific verification remains outstanding. |
+| SES-06 | V7.4.3 | The baseline password-change flow did not end already-issued access-token sessions. | `Pending` — local tests confirmed password change invalidates the changed user's session, including two sessions belonging to the same USER; an unrelated ADMIN session remained active. Full requirement-specific review remains outstanding. |
+| SES-07 | V7.4.5 | The baseline had no administrator endpoint to terminate another user's sessions. | `Pending` — local admin-initiated termination returned `200` for one session, and the target's pre-termination access token then received `401`. Audit-trail and complete requirement-specific review remain outstanding. |
 | SES-08 | V7.5.1 | The baseline allowed email updates without re-authentication or new-address verification. | `Pending` — self-service email change requires the current password and confirmation of the new address; local confirmation and login with the new address succeeded. |
-| SES-09 | V7.5.2 | The baseline had no user session listing or individual/all-session termination endpoints. | `Pending` — listing and termination flows are implemented; local listing succeeded, while individual/all-session termination still needs end-to-end retesting. |
+| SES-09 | V7.5.2 | The baseline had no user session listing or individual/all-session termination endpoints. | `Pending` — listing, current-session logout, targeted termination of another session, and all-session termination were verified locally. The complete ASVS requirement still needs review. |
 | SES-10 | V7.5.3 | Sensitive changes lacked a verified step-up or secondary factor. | `Fail` — current-password checks and email confirmation exist, but phishing-resistant MFA/step-up required for the target Level 3 assessment is not implemented. |
 
 ## Remaining work
 
 These dispositions cover only the 21 requirements identified during the
-initial V6/V7 review. The current matrix has 8 `Fail`, 13 `Pending`, and 324
+initial V6/V7 review. The current matrix has 6 `Fail`, 15 `Pending`, and 324
 `Not assessed`; no requirement is `Pass`. Other V6/V7 requirements and every
 other ASVS chapter still require assessment. Deployed rate limits, notification
 delivery, operational controls, performance, and customer/production evidence
@@ -200,15 +318,21 @@ need separate requirement-specific verification.
 
 Recommended next steps are:
 
-1. Retest the pending session controls, including individual and all-session
-   termination, concurrent-session limits, account disable/delete, and
-   absolute expiry across repeated refresh.
-2. Verify password/email/new-session notifications and SMTP failure handling;
-   decide whether a durable outbox/retry is required before relying on notices.
+1. Retest the remaining session controls, including the absolute-expiry
+   boundary across repeated refresh. Current-session
+   logout, targeted termination, all-session termination, concurrent-session
+   cap behavior, idle refresh rejection, deletion revocation, and token
+   rejection after account disablement were verified locally or with focused
+   automated tests.
+2. Assess whether durable outbox/retry is required before relying on notices,
+   and gather SMTP delivery/alerting evidence in staging. Local SMTP failure
+   logging and delivery of verification, email-change, new-session, and
+   password-change notifications were verified.
 3. Select and supply approved password datasets with documented provenance,
    license, freshness, coverage, and production deployment evidence.
 4. Address the confirmed gaps: context-specific password words, phishing-
-   resistant MFA/step-up, suspicious-authentication detection, registration
-   anti-enumeration, password recovery, and an admin reset-initiation flow.
+   resistant MFA/step-up, suspicious-authentication detection, and registration
+   anti-enumeration. Locally verify user-initiated recovery, emergency
+   randomization, support authorization, and recovery after SMTP failure.
 5. Continue requirement-by-requirement V6/V7 review, then assess all remaining
    ASVS chapters and the multi-tenant and deployment/operations workstreams.

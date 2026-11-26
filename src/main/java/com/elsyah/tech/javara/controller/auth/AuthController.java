@@ -30,6 +30,7 @@ import com.elsyah.tech.javara.request.auth.LoginRequest;
 import com.elsyah.tech.javara.request.auth.EmailChangeRequest;
 import com.elsyah.tech.javara.request.auth.EmailVerificationResendRequest;
 import com.elsyah.tech.javara.request.auth.PasswordChangeRequest;
+import com.elsyah.tech.javara.request.auth.PasswordResetRequest;
 import com.elsyah.tech.javara.request.auth.RefreshTokenRequest;
 import com.elsyah.tech.javara.request.auth.RegisterRequest;
 import com.elsyah.tech.javara.request.user.UserRequest;
@@ -39,6 +40,7 @@ import com.elsyah.tech.javara.response.auth.CsrfTokenResponse;
 import com.elsyah.tech.javara.response.user.UserResponse;
 import com.elsyah.tech.javara.service.auth.AuthService;
 import com.elsyah.tech.javara.service.auth.AuthServiceResult;
+import com.elsyah.tech.javara.service.auth.PasswordResetService;
 import com.elsyah.tech.javara.service.email.EmailVerificationService;
 import com.elsyah.tech.javara.service.common.ServiceResult;
 import com.elsyah.tech.javara.service.user.UserService;
@@ -48,20 +50,25 @@ import com.elsyah.tech.javara.service.user.UserService;
 public class AuthController {
     private static final String CSRF_ATTRIBUTE = CsrfToken.class.getName();
     private static final String CSRF_HEADER = "X-XSRF-TOKEN";
+    private static final String INVALID_PASSWORD_RESET_LINK_MESSAGE =
+            "Invalid or expired password reset link";
 
     private final UserService userService;
     private final AuthService authService;
     private final EmailVerificationService emailVerificationService;
+    private final PasswordResetService passwordResetService;
     private final JwtProperties jwtProperties;
 
     public AuthController(
             UserService userService,
             AuthService authService,
             EmailVerificationService emailVerificationService,
+            PasswordResetService passwordResetService,
             JwtProperties jwtProperties) {
         this.userService = userService;
         this.authService = authService;
         this.emailVerificationService = emailVerificationService;
+        this.passwordResetService = passwordResetService;
         this.jwtProperties = jwtProperties;
     }
 
@@ -133,6 +140,103 @@ public class AuthController {
                 status,
                 "If the account needs verification, instructions will be sent",
                 null));
+    }
+
+    @PostMapping("/password/reset/request")
+    public ResponseEntity<ApiResponse<Void>> requestPasswordReset(
+            @Valid @RequestBody PasswordResetRequest request) {
+        ServiceResult<Void> result = passwordResetService.requestReset(request.email());
+        if (result.isError()) {
+            return ResponseEntity.status(result.status())
+                    .body(ApiResponse.failure(result.status(), result.message()));
+        }
+        return ResponseEntity.status(result.status())
+                .body(ApiResponse.success(result.status(), result.message(), null));
+    }
+
+    @GetMapping("/password/reset")
+    public ResponseEntity<String> passwordResetPage(@RequestParam("token") String token) {
+        if (token == null || !token.matches("[A-Za-z0-9_-]{43}")) {
+            return passwordResetPage(
+                    HttpStatus.BAD_REQUEST, INVALID_PASSWORD_RESET_LINK_MESSAGE);
+        }
+        String escapedToken = org.springframework.web.util.HtmlUtils.htmlEscape(token);
+        String page = """
+                <!doctype html>
+                <html lang="en">
+                <head><meta charset="utf-8"><meta name="referrer" content="no-referrer">
+                <title>Reset JAVARA password</title></head>
+                <body><main><h1>Reset your password</h1>
+                <form method="post" action="/api/v1/auth/password/reset">
+                <input type="hidden" name="token" value="%s">
+                <label>New password
+                <input type="password" name="newPassword" minlength="8" maxlength="72"
+                       autocomplete="new-password" required></label>
+                <button type="submit">Set password</button>
+                </form></main></body></html>
+                """.formatted(escapedToken);
+        return passwordResetHtmlResponse(HttpStatus.OK, page);
+    }
+
+    @PostMapping(
+            value = "/password/reset",
+            consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    public ResponseEntity<String> completePasswordReset(
+            @RequestParam("token") String token,
+            @RequestParam("newPassword") String newPassword) {
+        var result = passwordResetService.completeReset(token, newPassword);
+        if (result.status().is4xxClientError()
+                && !INVALID_PASSWORD_RESET_LINK_MESSAGE.equals(result.message())) {
+            return passwordResetFormPage(result.status(), result.message(), token);
+        }
+        return passwordResetPage(result.status(), result.message());
+    }
+
+    private static ResponseEntity<String> passwordResetFormPage(
+            HttpStatus status, String message, String token) {
+        String escapedMessage = org.springframework.web.util.HtmlUtils.htmlEscape(message);
+        String escapedToken = org.springframework.web.util.HtmlUtils.htmlEscape(token);
+        String page = """
+                <!doctype html>
+                <html lang="en">
+                <head><meta charset="utf-8"><meta name="referrer" content="no-referrer">
+                <title>Reset JAVARA password</title></head>
+                <body><main><h1>Reset your password</h1>
+                <p role="alert">%s</p>
+                <form method="post" action="/api/v1/auth/password/reset">
+                <input type="hidden" name="token" value="%s">
+                <label>New password
+                <input type="password" name="newPassword" minlength="8" maxlength="72"
+                       autocomplete="new-password" required></label>
+                <button type="submit">Set password</button>
+                </form></main></body></html>
+                """.formatted(escapedMessage, escapedToken);
+        return passwordResetHtmlResponse(status, page);
+    }
+
+    private static ResponseEntity<String> passwordResetPage(
+            HttpStatus status, String message) {
+        String escapedMessage = org.springframework.web.util.HtmlUtils.htmlEscape(message);
+        String page = """
+                <!doctype html>
+                <html lang="en"><head><meta charset="utf-8">
+                <meta name="referrer" content="no-referrer">
+                <title>JAVARA password reset</title></head>
+                <body><main><h1>%s</h1></main></body></html>
+                """.formatted(escapedMessage);
+        return passwordResetHtmlResponse(status, page);
+    }
+
+    private static ResponseEntity<String> passwordResetHtmlResponse(
+            HttpStatus status, String page) {
+        return ResponseEntity.status(status)
+                .contentType(MediaType.TEXT_HTML)
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .header("Referrer-Policy", "no-referrer")
+                .header(
+                        "Content-Security-Policy",
+                        "default-src 'none'; form-action 'self'; style-src 'unsafe-inline'")
+                .body(page);
     }
 
     @PostMapping("/email/change")

@@ -26,6 +26,9 @@ public class AuthRateLimitWebMvcConfiguration implements WebMvcConfigurer {
     private static final String EMAIL_VERIFICATION_RESEND_PATH =
             "/api/v1/auth/email/verification/resend";
     private static final String EMAIL_VERIFICATION_PATH = "/api/v1/auth/email/verify";
+    private static final String PASSWORD_RESET_PATH = "/api/v1/auth/password/reset";
+    private static final String PASSWORD_RESET_REQUEST_PATH =
+            "/api/v1/auth/password/reset/request";
     private static final String REFRESH_PATH = "/api/v1/auth/refresh";
     private static final String PASSWORD_CHANGE_PATH = "/api/v1/auth/password/change";
     private static final String EMAIL_CHANGE_PATH = "/api/v1/auth/email/change";
@@ -37,6 +40,10 @@ public class AuthRateLimitWebMvcConfiguration implements WebMvcConfigurer {
             "/api/v1/admin/users/*/sessions/terminate";
     private static final String ADMIN_EMAIL_CHANGE_PATH =
             "/api/v1/admin/users/*/email/change";
+    private static final String ADMIN_EMERGENCY_PASSWORD_RESET_PATH =
+            "/api/v1/admin/users/*/security/force-password-reset";
+    private static final String ADMIN_RECOVERY_AUTHORIZATION_PATH =
+            "/api/v1/admin/users/*/password/recovery/authorize";
 
     private final AuthRateLimitInterceptor rateLimitInterceptor;
     private final LoginRateLimitProperties loginProperties;
@@ -78,6 +85,10 @@ public class AuthRateLimitWebMvcConfiguration implements WebMvcConfigurer {
             paths.add(SESSION_TERMINATE_ALL_PATH);
             paths.add(ADMIN_SESSION_TERMINATE_PATH);
             paths.add(ADMIN_EMAIL_CHANGE_PATH);
+            paths.add(ADMIN_EMERGENCY_PASSWORD_RESET_PATH);
+            paths.add(ADMIN_RECOVERY_AUTHORIZATION_PATH);
+            paths.add(PASSWORD_RESET_PATH);
+            paths.add(PASSWORD_RESET_REQUEST_PATH);
         }
         if (!paths.isEmpty()) {
             registry.addInterceptor(rateLimitInterceptor).addPathPatterns(paths);

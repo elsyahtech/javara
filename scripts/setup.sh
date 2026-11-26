@@ -90,6 +90,8 @@ token_transport="$(read_value 'Token transport (cookie/bearer)' 'cookie')"
 application_timezone="$(read_value 'Application timezone (IANA)' 'UTC')"
 smtp_host="$(read_value 'SMTP host' 'smtp.gmail.com')"
 smtp_port="$(read_value 'SMTP port' '587')"
+read -r -p "SMTP username: " smtp_username
+smtp_password="$(read_secret 'SMTP App Password')"
 signing_key="$(generate_signing_key)"
 
 validate_host "$postgres_host"
@@ -100,6 +102,14 @@ validate_host "$redis_host"
 validate_port "$redis_port"
 validate_host "$smtp_host"
 validate_port "$smtp_port"
+if [[ -z "$smtp_username" ]]; then
+    printf '%s\n' "SMTP username is required." >&2
+    exit 1
+fi
+if [[ -z "$smtp_password" ]]; then
+    printf '%s\n' "SMTP App Password is required." >&2
+    exit 1
+fi
 validate_admin_credentials \
     "$bootstrap_admin_email" \
     "$bootstrap_admin_password" \
@@ -154,8 +164,8 @@ spring:
   mail:
     host: $(yaml_quote "$smtp_host")
     port: ${smtp_port}
-    username: \${SMTP_USERNAME}
-    password: \${SMTP_APP_PASSWORD}
+    username: $(yaml_quote "$smtp_username")
+    password: $(yaml_quote "$smtp_password")
     properties:
       mail.smtp.auth: true
       mail.smtp.starttls.enable: true

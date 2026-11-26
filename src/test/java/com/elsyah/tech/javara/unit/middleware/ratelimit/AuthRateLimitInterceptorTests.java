@@ -89,8 +89,18 @@ class AuthRateLimitInterceptorTests {
         assertTrue(interceptor.preHandle(request, new MockHttpServletResponse(), new Object()));
         request.setRequestURI("/api/v1/admin/users/73fdb845-4e31-4cb0-91d1-1059770bc541/sessions/terminate");
         assertTrue(interceptor.preHandle(request, new MockHttpServletResponse(), new Object()));
+        request.setRequestURI("/api/v1/auth/password/reset");
+        assertTrue(interceptor.preHandle(request, new MockHttpServletResponse(), new Object()));
+        request.setRequestURI("/api/v1/auth/password/reset/request");
+        assertTrue(interceptor.preHandle(request, new MockHttpServletResponse(), new Object()));
+        request.setRequestURI(
+                "/api/v1/admin/users/73fdb845-4e31-4cb0-91d1-1059770bc541/security/force-password-reset");
+        assertTrue(interceptor.preHandle(request, new MockHttpServletResponse(), new Object()));
+        request.setRequestURI(
+                "/api/v1/admin/users/73fdb845-4e31-4cb0-91d1-1059770bc541/password/recovery/authorize");
+        assertTrue(interceptor.preHandle(request, new MockHttpServletResponse(), new Object()));
 
-        org.mockito.Mockito.verify(limiter, org.mockito.Mockito.times(4))
+        org.mockito.Mockito.verify(limiter, org.mockito.Mockito.times(8))
                 .checkAllowed("192.0.2.25", sessionReauth);
     }
 

@@ -42,6 +42,7 @@ import com.elsyah.tech.javara.response.auth.AuthTokenResponse;
 import com.elsyah.tech.javara.response.user.UserResponse;
 import com.elsyah.tech.javara.service.auth.AuthService;
 import com.elsyah.tech.javara.service.auth.AuthServiceResult;
+import com.elsyah.tech.javara.service.auth.PasswordResetService;
 import com.elsyah.tech.javara.service.common.ServiceResult;
 import com.elsyah.tech.javara.service.email.EmailVerificationService;
 import com.elsyah.tech.javara.service.user.UserService;
@@ -281,6 +282,7 @@ class AuthControllerTests {
                 userService,
                 authService,
                 mock(EmailVerificationService.class),
+                mock(PasswordResetService.class),
                 properties);
     }
 

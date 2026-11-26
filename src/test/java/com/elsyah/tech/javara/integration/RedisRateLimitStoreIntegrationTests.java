@@ -149,7 +149,7 @@ class RedisRateLimitStoreIntegrationTests extends PostgresRedisTestSupport {
                         .post("/api/v1/auth/register")
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .content("""
-                                {"email":"rate-limit-one@example.com","password":"password123"}
+                                {"email":"rate-limit-one@example.com","password":"unique-password-123"}
                                 """))
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
                         .status().isServiceUnavailable());
@@ -158,7 +158,7 @@ class RedisRateLimitStoreIntegrationTests extends PostgresRedisTestSupport {
                         .post("/api/v1/auth/register")
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .content("""
-                                {"email":"rate-limit-two@example.com","password":"password123"}
+                                {"email":"rate-limit-two@example.com","password":"unique-password-123"}
                                 """))
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
                         .status().isTooManyRequests())

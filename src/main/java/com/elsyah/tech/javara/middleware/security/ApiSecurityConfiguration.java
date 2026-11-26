@@ -39,6 +39,8 @@ public class ApiSecurityConfiguration {
             "/api/v1/auth/login",
             "/api/v1/auth/email/verify",
             "/api/v1/auth/email/verification/resend",
+            "/api/v1/auth/password/reset/request",
+            "/api/v1/auth/password/reset",
             "/api/v1/auth/refresh",
             "/api/v1/auth/logout",
             "/api/v1/auth/csrf");
@@ -81,6 +83,8 @@ public class ApiSecurityConfiguration {
                                 "/api/v1/auth/login",
                                 "/api/v1/auth/email/verify",
                                 "/api/v1/auth/email/verification/resend",
+                                "/api/v1/auth/password/reset/request",
+                                "/api/v1/auth/password/reset",
                                 "/api/v1/auth/refresh",
                                 "/api/v1/auth/logout",
                                 "/api/v1/auth/csrf").permitAll()
@@ -90,7 +94,9 @@ public class ApiSecurityConfiguration {
             security.csrf(csrf -> csrf
                     .csrfTokenRepository(csrfTokenRepository)
                     .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
-                    .ignoringRequestMatchers("/api/v1/auth/email/verify"));
+                    .ignoringRequestMatchers(
+                            "/api/v1/auth/email/verify",
+                            "/api/v1/auth/password/reset"));
         } else {
             security.csrf(AbstractHttpConfigurer::disable);
         }

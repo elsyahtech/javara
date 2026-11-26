@@ -158,7 +158,7 @@ class UserRepositoryTests extends PostgresRedisTestSupport {
         repository.saveAndFlush(deletedUser);
         entityManager.clear();
 
-        var result = userService.createUser(new UserRequest(email, "password123", true));
+        var result = userService.createUser(new UserRequest(email, "unique-password-123", true));
 
         assertEquals(HttpStatus.CREATED, result.status());
         assertTrue(repository.findByEmail(email).isPresent());

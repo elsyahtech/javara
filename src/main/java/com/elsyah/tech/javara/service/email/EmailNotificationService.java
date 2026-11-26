@@ -2,6 +2,7 @@ package com.elsyah.tech.javara.service.email;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,6 +55,44 @@ public class EmailNotificationService {
                 "JAVARA password changed",
                 "Your JAVARA password was changed. If you did not make this change, "
                         + "contact your administrator immediately.");
+    }
+
+    public void passwordResetLink(
+            String recipient, String rawToken, boolean supportAuthorized, Duration tokenTtl) {
+        String encodedToken = URLEncoder.encode(rawToken, StandardCharsets.UTF_8);
+        String resetUrl = settings.publicBaseUrl()
+                + "/api/v1/auth/password/reset?token="
+                + encodedToken;
+        EmailEventType type = supportAuthorized
+                ? EmailEventType.PASSWORD_RESET_SUPPORT_AUTHORIZED
+                : EmailEventType.PASSWORD_RESET_REQUESTED;
+        String subject = supportAuthorized
+                ? "JAVARA account recovery authorized"
+                : "Reset your JAVARA password";
+        String message = supportAuthorized
+                ? "Support has authorized recovery for your JAVARA account."
+                : "A password reset was requested for your JAVARA account.";
+        publish(
+                type,
+                recipient,
+                subject,
+                message + "\n\nChoose a new password using this single-use link:\n"
+                        + resetUrl + "\n\nThe link expires in " + tokenTtl
+                        + ". If you did not expect this request, contact your administrator.");
+    }
+
+    public void emergencyPasswordResetNotice(String recipient, String adminMessage) {
+        publish(
+                EmailEventType.EMERGENCY_PASSWORD_RESET,
+                recipient,
+                "JAVARA security alert: password reset",
+                "JAVARA has invalidated your password and terminated all active sessions. "
+                        + "Sign-in is blocked until support verifies your identity and "
+                        + "authorizes account recovery.\n\n"
+                        + "Message from your administrator:\n"
+                        + adminMessage
+                        + "\n\nIf you did not expect this action, contact support using "
+                        + "a trusted contact channel.");
     }
 
     public void emailChanged(String recipient) {

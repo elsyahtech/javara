@@ -23,6 +23,9 @@ public class AuthRateLimitInterceptor implements HandlerInterceptor {
     private static final String EMAIL_CHANGE_PATH = "/api/v1/auth/email/change";
     private static final String REFRESH_PATH = "/api/v1/auth/refresh";
     private static final String PASSWORD_CHANGE_PATH = "/api/v1/auth/password/change";
+    private static final String PASSWORD_RESET_PATH = "/api/v1/auth/password/reset";
+    private static final String PASSWORD_RESET_REQUEST_PATH =
+            "/api/v1/auth/password/reset/request";
     private static final String SESSION_PATH_PREFIX = "/api/v1/auth/sessions/";
     private static final String SESSION_TERMINATE_ALL_PATH =
             "/api/v1/auth/sessions/terminate-all";
@@ -68,6 +71,7 @@ public class AuthRateLimitInterceptor implements HandlerInterceptor {
             case LOGIN_PATH -> loginProperties;
             case REGISTER_PATH, EMAIL_VERIFICATION_RESEND_PATH, EMAIL_VERIFICATION_PATH ->
                     registerProperties;
+            case PASSWORD_RESET_PATH, PASSWORD_RESET_REQUEST_PATH -> sessionReauthProperties;
             case REFRESH_PATH -> refreshProperties;
             case PASSWORD_CHANGE_PATH, EMAIL_CHANGE_PATH -> sessionReauthProperties;
             default -> isSessionReauthenticationPath(path)
@@ -84,9 +88,17 @@ public class AuthRateLimitInterceptor implements HandlerInterceptor {
                 && path.endsWith("/sessions/terminate");
         boolean administratorEmailChange = path.startsWith(ADMIN_SESSION_PATH_PREFIX)
                 && path.endsWith("/email/change");
+        boolean administratorEmergencyPasswordReset =
+                path.startsWith(ADMIN_SESSION_PATH_PREFIX)
+                        && path.endsWith("/security/force-password-reset");
+        boolean administratorRecoveryAuthorization =
+                path.startsWith(ADMIN_SESSION_PATH_PREFIX)
+                        && path.endsWith("/password/recovery/authorize");
         return SESSION_TERMINATE_ALL_PATH.equals(path)
                 || userSessionTermination
                 || administratorSessionTermination
-                || administratorEmailChange;
+                || administratorEmailChange
+                || administratorEmergencyPasswordReset
+                || administratorRecoveryAuthorization;
     }
 }

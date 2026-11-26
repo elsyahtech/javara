@@ -106,7 +106,7 @@ class UserConcurrentIntegrationTests extends PostgresRedisTestSupport {
             requests.add(() -> {
                 try {
                     ServiceResult<UserEntity> result = userService.createUser(
-                            new UserRequest(email, "password123", true));
+                            new UserRequest(email, "unique-password-123", true));
                     return result.status();
                 } catch (DataIntegrityViolationException exception) {
                     return HttpStatus.CONFLICT;

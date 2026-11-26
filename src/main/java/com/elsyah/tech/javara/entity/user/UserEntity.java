@@ -1,15 +1,20 @@
 package com.elsyah.tech.javara.entity.user;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.SQLRestriction;
 
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
 import jakarta.persistence.Id;
 import jakarta.persistence.Version;
@@ -50,6 +55,19 @@ public class UserEntity {
 
     @Column(name = "email_verified", nullable = false)
     private boolean emailVerified = true;
+
+    @Column(name = "password_reset_required", nullable = false)
+    private boolean passwordResetRequired;
+
+    @Column(name = "password_reset_support_required", nullable = false)
+    private boolean passwordResetSupportRequired;
+
+    @ElementCollection
+    @CollectionTable(
+            name = "user_compromised_password_hashes",
+            joinColumns = @JoinColumn(name = "user_id"))
+    @Column(name = "password_hash", nullable = false, length = 255)
+    private List<String> compromisedPasswordHashes = new ArrayList<>();
 
     @Column(name = "pending_email")
     private String pendingEmail;
@@ -93,6 +111,18 @@ public class UserEntity {
 
     public boolean isEmailVerified() { return emailVerified; }
     public void setEmailVerified(boolean emailVerified) { this.emailVerified = emailVerified; }
+
+    public boolean isPasswordResetRequired() { return passwordResetRequired; }
+    public void setPasswordResetRequired(boolean passwordResetRequired) {
+        this.passwordResetRequired = passwordResetRequired;
+    }
+
+    public boolean isPasswordResetSupportRequired() { return passwordResetSupportRequired; }
+    public void setPasswordResetSupportRequired(boolean passwordResetSupportRequired) {
+        this.passwordResetSupportRequired = passwordResetSupportRequired;
+    }
+
+    public List<String> getCompromisedPasswordHashes() { return compromisedPasswordHashes; }
 
     public String getPendingEmail() { return pendingEmail; }
     public void setPendingEmail(String pendingEmail) { this.pendingEmail = pendingEmail; }

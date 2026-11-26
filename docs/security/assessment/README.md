@@ -3,10 +3,10 @@
 ## Current status
 
 The assessment is in progress. The initial V6/V7 source review recorded 21
-requirements as failing. Remediation is now present for some findings in the
-uncommitted worktree, but the current disposition is 8 `Fail`, 13 `Pending`,
-and 324 `Not assessed`; none is verified as `Pass`. Do not use this record as
-a production-readiness or compliance claim.
+requirements as failing. Remediation for some findings is included in commit
+`b009b8a`, but the current disposition is 6 `Fail`, 15 `Pending`, and 324
+`Not assessed`; none is verified as `Pass`. Do not use this record as a
+production-readiness or compliance claim.
 
 The target is to satisfy all 345 ASVS v5.0.0 Level 3 requirements. No
 requirement is excluded by default; any proposed exception requires explicit
@@ -24,7 +24,7 @@ Auditor approval and a documented rationale.
 ## Current baseline
 
 - Source commit: `aacdb7858552fe2cfd35eb40ae04808d0e33c120`
-- Current remediation evidence: uncommitted worktree, including local manual
+- Current remediation evidence: commit `b009b8a`, including local manual
   authentication/email tests recorded in the
   [V6/V7 review](authentication-session-review.md).
 - Target: reusable JAVARA baseline for multiple companies and customer

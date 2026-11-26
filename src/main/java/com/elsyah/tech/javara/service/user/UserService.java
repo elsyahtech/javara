@@ -327,6 +327,14 @@ public class UserService {
             return new ServiceResult<>(
                     null, HttpStatus.BAD_REQUEST, "New password must be different");
         }
+        if (passwordHashService.matchesAny(
+                newPassword, user.getCompromisedPasswordHashes())) {
+            return new ServiceResult<>(
+                    null,
+                    HttpStatus.BAD_REQUEST,
+                    "This password was previously invalidated during an emergency reset. "
+                            + "Choose a different password that you have not used before.");
+        }
         if (!passwordPolicyService.isPasswordAllowed(newPassword)) {
             return rejectedPassword();
         }
@@ -391,6 +399,7 @@ public class UserService {
                 passwordHashService.matches(request.password(), user.getPassword());
         if (!Boolean.TRUE.equals(user.getIsActive())
                 || !user.isEmailVerified()
+                || user.isPasswordResetRequired()
                 || !passwordMatches) {
             return invalidCredentials();
         }
