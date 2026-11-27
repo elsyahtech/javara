@@ -4,6 +4,7 @@ import java.util.UUID;
 
 import jakarta.validation.Valid;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -23,6 +24,11 @@ import com.elsyah.tech.javara.service.user.UserService;
 
 @RestController
 @RequestMapping("/api/v1/admin/users")
+@ConditionalOnProperty(
+        prefix = "app.features",
+        name = "auth-api",
+        havingValue = "true",
+        matchIfMissing = true)
 public class AdminSessionController {
     private final SessionManagementService sessionManagementService;
     private final UserService userService;

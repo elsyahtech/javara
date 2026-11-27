@@ -5,6 +5,7 @@ import java.util.UUID;
 
 import jakarta.validation.Valid;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -24,6 +25,11 @@ import com.elsyah.tech.javara.service.common.ServiceResult;
 
 @RestController
 @RequestMapping("/api/v1/auth/sessions")
+@ConditionalOnProperty(
+        prefix = "app.features",
+        name = "auth-api",
+        havingValue = "true",
+        matchIfMissing = true)
 public class SessionController {
     private final SessionManagementService sessionManagementService;
 

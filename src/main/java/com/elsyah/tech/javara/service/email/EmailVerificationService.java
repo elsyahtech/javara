@@ -11,6 +11,7 @@ import java.util.HexFormat;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +26,11 @@ import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.service.common.ServiceResult;
 
 @Service
+@ConditionalOnProperty(
+        prefix = "app.features",
+        name = "auth-api",
+        havingValue = "true",
+        matchIfMissing = true)
 public class EmailVerificationService {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 

@@ -323,7 +323,7 @@ server:
     min-response-size: 1KB
 spring:
   config:
-    import: optional:file:./config/security.yml
+    import: optional:file:./config/security.yml,optional:file:./config/database.yml,optional:file:./config/tls.yml,optional:file:./config/mtls.yml
   profiles:
     active: local
   mail:
@@ -345,6 +345,13 @@ spring:
     url: jdbc:postgresql://localhost:${postgres_port}/${postgres_db}
     username: '${postgres_user}'
     password: '${postgres_password}'
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      validation-timeout: 5000
+      idle-timeout: 600000
+      max-lifetime: 1800000
   data:
     redis:
       host: localhost

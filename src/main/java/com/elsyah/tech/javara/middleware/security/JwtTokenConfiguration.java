@@ -10,6 +10,7 @@ import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
@@ -27,7 +28,15 @@ import org.springframework.security.oauth2.server.authorization.client.Registere
 import com.elsyah.tech.javara.service.auth.SessionTokenValidator;
 
 @Configuration
-@EnableConfigurationProperties(BootstrapAdminProperties.class)
+@ConditionalOnProperty(
+        prefix = "app.features",
+        name = "resource-server",
+        havingValue = "true",
+        matchIfMissing = true)
+@EnableConfigurationProperties({
+    JwtProperties.class,
+    SessionProperties.class
+})
 public class JwtTokenConfiguration {
     private static final String ISSUER = "javara";
 

@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Page;
@@ -39,6 +40,11 @@ import com.elsyah.tech.javara.service.common.ServiceResult;
  * @contact https://www.linkedin.com/in/elmansyah
  */
 @Service
+@ConditionalOnProperty(
+        prefix = "app.features",
+        name = "auth-api",
+        havingValue = "true",
+        matchIfMissing = true)
 public class UserService {
     private static final int MAX_PAGE_SIZE = 100;
 

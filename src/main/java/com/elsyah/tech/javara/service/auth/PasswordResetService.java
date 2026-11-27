@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -32,6 +33,11 @@ import com.elsyah.tech.javara.service.user.PasswordPolicyService;
 import com.elsyah.tech.javara.utils.security.PasswordHashService;
 
 @Service
+@ConditionalOnProperty(
+        prefix = "app.features",
+        name = "auth-api",
+        havingValue = "true",
+        matchIfMissing = true)
 public class PasswordResetService {
     private static final Logger LOGGER = LoggerFactory.getLogger(PasswordResetService.class);
     private static final Duration TOKEN_TTL = Duration.ofHours(1);

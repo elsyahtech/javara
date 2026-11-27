@@ -34,9 +34,14 @@ make run
 The setup writes runtime settings to `config/application.yml`. That file is
 local, has restricted file permissions, and is ignored by Git. The generated
 configuration binds the API to `127.0.0.1:8080`.
-`make setup` asks for the SMTP host and port (defaults: Gmail and port 587),
-SMTP username, and SMTP App Password. The password prompt does not echo input,
-and both credentials are written directly into `config/application.yml`.
+`make install` configures the standard JAVARA profile with the built-in
+authentication API, JWT validation, service authentication, email, and
+authentication rate limits enabled.
+`make setup` instead asks which runtime modules to enable. SMTP and initial
+administrator prompts appear only when the built-in authentication API is
+enabled; Redis prompts appear only when its rate limits are enabled. The SMTP
+password prompt does not echo input, and supplied credentials are written
+directly into `config/application.yml`.
 `make install` asks only for SMTP host and port and leaves credential
 placeholders, which must be supplied through the environment/secret manager or
 replaced locally. If storing credentials directly in the file, use
@@ -72,22 +77,51 @@ confirmation. Do not run it if you need to keep local records.
 
 ## Option B: Connect to services you already have
 
-If PostgreSQL and Redis are already available, run:
+If PostgreSQL is already available, run:
 
 ```bash
 make setup
 ```
 
-The setup asks for the connection details, initial ADMIN account, token
-transport, application name (default `JAVARA`), email attribution
-(default `JAVARA`), and application timezone (IANA; default `UTC`). Enter
-`none` to omit the email's “Powered by” attribution. It generates a JWT
-signing key, checks whether the service ports are reachable when `nc` is
-installed, and writes `config/application.yml`.
-It also seeds the same local-only illustrative password-policy files when they
-do not already exist.
-The application verifies the actual database and Redis credentials when it
-starts.
+The first prompts select the built-in authentication API, JWT resource-server
+validation, service-to-service authentication, and authentication rate
+limiting. Defaults keep the standard feature set enabled. The setup stops
+before writing configuration if an enabled module is missing a required
+dependency. Redis details are requested only when authentication rate limiting
+is enabled; administrator credentials and SMTP settings are requested only
+when the built-in authentication API is enabled. A JWT key and token transport
+are requested only when resource-server validation is enabled. Token transport
+defaults to `COOKIE` with the authentication API and `BEARER` without it.
+
+The setup also asks for the PostgreSQL connection, application name (default
+`JAVARA`), email attribution (default `JAVARA`), and application timezone
+(IANA; default `UTC`). Enter `none` to omit the email's “Powered by”
+attribution. It checks required service ports when `nc` is installed and writes
+the selected modules to `config/application.yml`. Password-policy sample files
+are created only when the built-in authentication API is enabled. The
+application verifies the database and, when rate limiting is enabled, Redis
+connections at startup.
+
+After the initial setup, tune only the area you need:
+
+```bash
+make db-setup
+```
+
+This configures the PostgreSQL connection and pool in
+`config/database.yml`. To terminate HTTPS in the application, run
+`make tls-setup`; to require trusted client certificates for inbound HTTPS,
+configure TLS first and then run `make mtls-setup`. These commands write
+separate ignored configuration files and do not replace the rest of the
+runtime settings. When HTTPS terminates at a reverse proxy, application TLS
+can remain disabled.
+
+For a CRUD service that should validate compatible JAVARA tokens but not expose
+JAVARA's user sign-in, choose `auth-api: no`, `resource-server: yes`,
+`service-auth: no`, and `rate-limiting: no`. Choose `resource-server: no` only
+when the service should not validate JWTs at all. See the [runtime modules
+section](configuration.md#runtime-modules) for exact behavior and dependency
+rules.
 
 Configure authentication security separately when ready:
 
@@ -140,7 +174,10 @@ Never point tests at a database containing data you need.
 | Command | What it does |
 |---|---|
 | `make install` | Install/check local prerequisites and start local services |
-| `make setup` | Configure connections to existing PostgreSQL and Redis services |
+| `make setup` | Create the initial runtime configuration and select modules |
+| `make db-setup` | Configure PostgreSQL connection and HikariCP pool settings |
+| `make tls-setup` | Configure application-terminated HTTPS or leave it disabled |
+| `make mtls-setup` | Require trusted client certificates for inbound HTTPS |
 | `make security-setup` | Configure authentication threat detection and response separately |
 | `make run` | Start the Spring Boot API |
 | `make test` | Run unit and integration tests |

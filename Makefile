@@ -1,4 +1,4 @@
-.PHONY: install setup security-setup run test build db-up db-down db-reset psql backup-setup backup-run backup-disable
+.PHONY: install setup db-setup tls-setup mtls-setup security-setup run test build db-up db-down db-reset psql backup-setup backup-run backup-disable
 
 install:
 	bash scripts/install.sh
@@ -6,6 +6,15 @@ install:
 setup:
 	bash scripts/java-install.sh
 	bash scripts/setup.sh
+
+db-setup:
+	bash scripts/database-setup.sh
+
+tls-setup:
+	bash scripts/tls-setup.sh
+
+mtls-setup:
+	bash scripts/mtls-setup.sh
 
 security-setup:
 	bash scripts/security-setup.sh

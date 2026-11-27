@@ -1,16 +1,34 @@
 spring:
   application:
     name: ${app.name}
+  datasource:
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      validation-timeout: 5000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+server:
+  ssl:
+    enabled: false
+    client-auth: none
 app:
   name: JAVARA
   branding:
     powered-by: JAVARA
   time-zone: UTC
+  features:
+    auth-api: true
+    resource-server: true
+    rate-limiting: true
   email:
     enabled: true
     verification-token-ttl: 24h
     public-base-url: http://localhost:8080
   security:
+    service-auth:
+      enabled: true
     mfa:
       enabled: true
       required: false

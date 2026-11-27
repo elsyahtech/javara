@@ -1,9 +1,7 @@
 package com.elsyah.tech.javara.unit.middleware.ratelimit;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
@@ -26,6 +24,7 @@ import com.elsyah.tech.javara.middleware.ratelimit.LoginRateLimitProperties;
 import com.elsyah.tech.javara.middleware.ratelimit.RefreshRateLimitProperties;
 import com.elsyah.tech.javara.middleware.ratelimit.RedisStartupCheck;
 import com.elsyah.tech.javara.middleware.ratelimit.RegisterRateLimitProperties;
+import com.elsyah.tech.javara.middleware.ratelimit.SessionReauthRateLimitProperties;
 import com.elsyah.tech.javara.middleware.store.RedisRateLimitStore;
 
 class RedisStartupCheckTests {
@@ -50,7 +49,7 @@ class RedisStartupCheckTests {
     }
 
     @Test
-    void verifiesRedisEvenWhenAllAuthenticationRateLimitsAreDisabled() {
+    void doesNotRequireRedisWhenAllAuthenticationRateLimitsAreDisabled() {
         RedisConnectionFactory connectionFactory = connectionFactory();
         RedisRateLimitStore rateLimitStore = mock(RedisRateLimitStore.class);
         RedisStartupCheck startupCheck = startupCheck(
@@ -62,12 +61,12 @@ class RedisStartupCheckTests {
 
         assertDoesNotThrow(startupCheck::afterSingletonsInstantiated);
 
-        verify(connectionFactory).getConnection();
+        verifyNoInteractions(connectionFactory);
         verifyNoInteractions(rateLimitStore);
     }
 
     @Test
-    void failsStartupWhenRedisIsUnavailableEvenWithAllLimitersDisabled() {
+    void doesNotFailStartupWhenRedisIsUnavailableAndAllLimitersAreDisabled() {
         RedisConnectionFactory connectionFactory = mock(RedisConnectionFactory.class);
         RedisRateLimitStore rateLimitStore = mock(RedisRateLimitStore.class);
         DataAccessResourceFailureException redisFailure =
@@ -80,12 +79,8 @@ class RedisStartupCheckTests {
                 false,
                 false);
 
-        IllegalStateException exception = assertThrows(
-                IllegalStateException.class,
-                startupCheck::afterSingletonsInstantiated);
-
-        assertTrue(exception.getMessage().contains("Redis is required"));
-        assertSame(redisFailure, exception.getCause());
+        assertDoesNotThrow(startupCheck::afterSingletonsInstantiated);
+        verifyNoInteractions(connectionFactory);
         verifyNoInteractions(rateLimitStore);
     }
 
@@ -98,7 +93,7 @@ class RedisStartupCheckTests {
         RedisStartupCheck startupCheck = startupCheck(
                 connectionFactory,
                 rateLimitStore,
-                false,
+                true,
                 false,
                 false);
 
@@ -146,6 +141,8 @@ class RedisStartupCheckTests {
                         5, Duration.ofHours(1), "test:register", registerEnabled),
                 new RefreshRateLimitProperties(
                         30, Duration.ofMinutes(1), "test:refresh", refreshEnabled),
+                new SessionReauthRateLimitProperties(
+                        5, Duration.ofMinutes(15), "test:reauth", false),
                 new ApplicationIdentityProperties("Test Application"));
     }
 }

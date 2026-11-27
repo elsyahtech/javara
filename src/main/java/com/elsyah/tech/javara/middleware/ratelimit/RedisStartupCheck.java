@@ -3,6 +3,7 @@ package com.elsyah.tech.javara.middleware.ratelimit;
 import java.time.Duration;
 import java.util.UUID;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.connection.RedisConnection;
@@ -13,6 +14,16 @@ import com.elsyah.tech.javara.middleware.config.ApplicationIdentityProperties;
 import com.elsyah.tech.javara.middleware.store.RedisRateLimitStore;
 
 @Component
+@ConditionalOnProperty(
+        prefix = "app.features",
+        name = "rate-limiting",
+        havingValue = "true",
+        matchIfMissing = true)
+@ConditionalOnProperty(
+        prefix = "app.features",
+        name = "auth-api",
+        havingValue = "true",
+        matchIfMissing = true)
 public class RedisStartupCheck implements SmartInitializingSingleton {
     private static final Duration PROBE_WINDOW = Duration.ofSeconds(1);
 
@@ -21,6 +32,7 @@ public class RedisStartupCheck implements SmartInitializingSingleton {
     private final LoginRateLimitProperties loginProperties;
     private final RegisterRateLimitProperties registerProperties;
     private final RefreshRateLimitProperties refreshProperties;
+    private final SessionReauthRateLimitProperties sessionReauthProperties;
     private final ApplicationIdentityProperties applicationIdentity;
 
     public RedisStartupCheck(
@@ -29,21 +41,23 @@ public class RedisStartupCheck implements SmartInitializingSingleton {
             LoginRateLimitProperties loginProperties,
             RegisterRateLimitProperties registerProperties,
             RefreshRateLimitProperties refreshProperties,
+            SessionReauthRateLimitProperties sessionReauthProperties,
             ApplicationIdentityProperties applicationIdentity) {
         this.connectionFactory = connectionFactory;
         this.rateLimitStore = rateLimitStore;
         this.loginProperties = loginProperties;
         this.registerProperties = registerProperties;
         this.refreshProperties = refreshProperties;
+        this.sessionReauthProperties = sessionReauthProperties;
         this.applicationIdentity = applicationIdentity;
     }
 
     @Override
     public void afterSingletonsInstantiated() {
-        verifyRedisAvailable();
         if (!isAnyRateLimitEnabled()) {
             return;
         }
+        verifyRedisAvailable();
 
         String probeKey = "javara:startup-check:" + UUID.randomUUID();
         try {
@@ -74,6 +88,7 @@ public class RedisStartupCheck implements SmartInitializingSingleton {
     private boolean isAnyRateLimitEnabled() {
         return loginProperties.enabled()
                 || registerProperties.enabled()
-                || refreshProperties.enabled();
+                || refreshProperties.enabled()
+                || sessionReauthProperties.enabled();
     }
 }

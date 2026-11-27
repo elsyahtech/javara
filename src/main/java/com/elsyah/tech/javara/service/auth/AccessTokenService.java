@@ -5,6 +5,7 @@ import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
@@ -17,6 +18,11 @@ import com.elsyah.tech.javara.middleware.security.JwtProperties;
 import com.elsyah.tech.javara.middleware.security.JwtTokenConfiguration;
 
 @Service
+@ConditionalOnProperty(
+        prefix = "app.features",
+        name = "auth-api",
+        havingValue = "true",
+        matchIfMissing = true)
 public class AccessTokenService {
     private final JwtEncoder jwtEncoder;
     private final JwtProperties properties;

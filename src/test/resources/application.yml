@@ -5,6 +5,10 @@ app:
     password-policy:
       enabled: false
 spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 2
+      minimum-idle: 0
   mail:
     host: localhost
     username: test

@@ -5,12 +5,23 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Component;
 
 import com.elsyah.tech.javara.middleware.store.RedisRateLimitStore;
 
 @Component
+@ConditionalOnProperty(
+        prefix = "app.features",
+        name = "rate-limiting",
+        havingValue = "true",
+        matchIfMissing = true)
+@ConditionalOnProperty(
+        prefix = "app.features",
+        name = "auth-api",
+        havingValue = "true",
+        matchIfMissing = true)
 public class AuthRateLimiter {
     private final RedisRateLimitStore store;
 

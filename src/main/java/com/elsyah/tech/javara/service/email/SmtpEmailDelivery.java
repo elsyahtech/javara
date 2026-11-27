@@ -2,11 +2,17 @@ package com.elsyah.tech.javara.service.email;
 
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import com.elsyah.tech.javara.middleware.email.EmailSettings;
 
 @Component
+@ConditionalOnProperty(
+        prefix = "app.email",
+        name = "enabled",
+        havingValue = "true",
+        matchIfMissing = true)
 public class SmtpEmailDelivery implements EmailDelivery {
     private final JavaMailSender mailSender;
     private final EmailSettings settings;

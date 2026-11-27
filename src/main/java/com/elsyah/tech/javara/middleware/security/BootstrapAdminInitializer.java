@@ -13,6 +13,11 @@ import com.elsyah.tech.javara.service.user.BootstrapAdminService;
         prefix = "app.security.bootstrap-admin",
         name = "enabled",
         havingValue = "true")
+@ConditionalOnProperty(
+        prefix = "app.features",
+        name = "auth-api",
+        havingValue = "true",
+        matchIfMissing = true)
 public class BootstrapAdminInitializer implements SmartInitializingSingleton {
     private static final Logger logger = LoggerFactory.getLogger(BootstrapAdminInitializer.class);
 

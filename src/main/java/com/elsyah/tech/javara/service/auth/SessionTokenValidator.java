@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,6 +14,11 @@ import com.elsyah.tech.javara.middleware.security.SessionProperties;
 import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
 
 @Service
+@ConditionalOnProperty(
+        prefix = "app.features",
+        name = "resource-server",
+        havingValue = "true",
+        matchIfMissing = true)
 public class SessionTokenValidator {
     private final RefreshTokenRepository refreshTokenRepository;
     private final SessionProperties sessionProperties;

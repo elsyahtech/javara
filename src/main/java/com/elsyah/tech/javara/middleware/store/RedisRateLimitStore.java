@@ -3,12 +3,23 @@ package com.elsyah.tech.javara.middleware.store;
 import java.time.Duration;
 import java.util.List;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
 @Component
+@ConditionalOnProperty(
+        prefix = "app.features",
+        name = "rate-limiting",
+        havingValue = "true",
+        matchIfMissing = true)
+@ConditionalOnProperty(
+        prefix = "app.features",
+        name = "auth-api",
+        havingValue = "true",
+        matchIfMissing = true)
 public class RedisRateLimitStore {
     private static final RedisScript<Long> INCREMENT_AND_CHECK_SCRIPT = new DefaultRedisScript<>("""
             local count = redis.call('INCR', KEYS[1])

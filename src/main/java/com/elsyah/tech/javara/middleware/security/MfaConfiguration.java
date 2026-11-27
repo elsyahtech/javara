@@ -3,6 +3,7 @@ package com.elsyah.tech.javara.middleware.security;
 import java.net.URI;
 import java.util.Set;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -30,7 +31,12 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
 @Configuration
-@EnableConfigurationProperties(MfaProperties.class)
+@ConditionalOnProperty(
+        prefix = "app.features",
+        name = "auth-api",
+        havingValue = "true",
+        matchIfMissing = true)
+@EnableConfigurationProperties({BootstrapAdminProperties.class, MfaProperties.class})
 public class MfaConfiguration {
     @Bean
     ObjectMapper mfaWebAuthnObjectMapper() {

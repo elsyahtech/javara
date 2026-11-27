@@ -11,6 +11,7 @@ import java.util.UUID;
 
 import javax.crypto.Mac;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,11 @@ import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.service.email.EmailNotificationService;
 
 @Service
+@ConditionalOnProperty(
+        prefix = "app.features",
+        name = "auth-api",
+        havingValue = "true",
+        matchIfMissing = true)
 public class SuspiciousAuthenticationService {
     private static final Logger LOGGER =
             LoggerFactory.getLogger(SuspiciousAuthenticationService.class);

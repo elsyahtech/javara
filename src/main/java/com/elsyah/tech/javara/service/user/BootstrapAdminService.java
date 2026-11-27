@@ -2,6 +2,7 @@ package com.elsyah.tech.javara.service.user;
 
 import java.util.UUID;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -12,6 +13,11 @@ import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.utils.security.PasswordHashService;
 
 @Service
+@ConditionalOnProperty(
+        prefix = "app.features",
+        name = "auth-api",
+        havingValue = "true",
+        matchIfMissing = true)
 public class BootstrapAdminService {
     private final UserRepository userRepository;
     private final PasswordHashService passwordHashService;

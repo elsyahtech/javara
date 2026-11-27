@@ -3,6 +3,7 @@ package com.elsyah.tech.javara.middleware.interceptor;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
@@ -14,6 +15,16 @@ import com.elsyah.tech.javara.middleware.ratelimit.RegisterRateLimitProperties;
 import com.elsyah.tech.javara.middleware.ratelimit.SessionReauthRateLimitProperties;
 
 @Configuration
+@ConditionalOnProperty(
+        prefix = "app.features",
+        name = "rate-limiting",
+        havingValue = "true",
+        matchIfMissing = true)
+@ConditionalOnProperty(
+        prefix = "app.features",
+        name = "auth-api",
+        havingValue = "true",
+        matchIfMissing = true)
 @EnableConfigurationProperties({
         LoginRateLimitProperties.class,
         RegisterRateLimitProperties.class,

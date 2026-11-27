@@ -18,10 +18,13 @@ public class EmailConfiguration {
             Environment environment) {
         boolean productionProfile =
                 environment.acceptsProfiles(Profiles.of("prod", "production", "staging"));
-        if (!properties.enabled() && productionProfile) {
+        boolean authApiEnabled = environment.getProperty(
+                "app.features.auth-api", Boolean.class, true);
+        if (!properties.enabled() && productionProfile && authApiEnabled) {
             throw new IllegalStateException(
                     "Email delivery cannot be disabled with the prod, production, or staging "
-                            + "profile. Configure an SMTP provider using spring.mail.");
+                            + "profile while 'auth-api' is enabled. Configure an SMTP provider "
+                            + "using spring.mail, or disable app.features.auth-api.");
         }
         if (properties.verificationTokenTtl().isNegative()
                 || properties.verificationTokenTtl().isZero()) {

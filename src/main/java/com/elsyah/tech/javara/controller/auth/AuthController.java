@@ -7,6 +7,7 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -59,6 +60,11 @@ import com.elsyah.tech.javara.service.user.UserService;
 
 @RestController
 @RequestMapping("/api/v1/auth")
+@ConditionalOnProperty(
+        prefix = "app.features",
+        name = "auth-api",
+        havingValue = "true",
+        matchIfMissing = true)
 public class AuthController {
     private static final String CSRF_ATTRIBUTE = CsrfToken.class.getName();
     private static final String CSRF_HEADER = "X-XSRF-TOKEN";

@@ -1,9 +1,10 @@
 # Configuration
 
-JAVARA reads local runtime settings from `config/application.yml` when started
-through the repository scripts. The file is ignored by Git and should contain
-only settings for that environment. Do not commit credentials, signing keys,
-or real customer data.
+JAVARA reads local runtime settings from `config/application.yml` and optional
+area-specific files under `config/` when started through the repository
+scripts. These files are ignored by Git and should contain only settings for
+that environment. Do not commit credentials, signing keys, certificates, or
+real customer data.
 
 Spring Boot environment variables can override application properties. For
 example:
@@ -14,6 +15,68 @@ APP_MIDDLEWARE_RATE_LIMIT_REGISTER_MAX_REQUESTS=5
 APP_TIME_ZONE=Asia/Jakarta
 SPRING_DATA_REDIS_HOST=localhost
 ```
+
+## Runtime modules
+
+JAVARA uses one application artifact. Runtime switches activate only the
+selected built-in modules; they do not remove code from the package. Existing
+configurations retain the standard profile because these switches default to
+`true`:
+
+```yaml
+app:
+  features:
+    auth-api: true
+    resource-server: true
+    rate-limiting: true
+  security:
+    service-auth:
+      enabled: true
+```
+
+`make setup` asks which modules to enable and requests only their required
+settings. It fails before writing the file if the selection is inconsistent.
+The dependency rules are:
+
+- `auth-api` requires `resource-server`. In production-like profiles, it also
+  requires email delivery for verification, MFA, and recovery messages.
+- `service-auth` (`app.security.service-auth.enabled`) requires
+  `resource-server`.
+- Authentication rate limiting applies to JAVARA's built-in auth routes and
+  requires Redis only when at least one limiter is enabled. It is inactive when
+  `auth-api` is off.
+
+To keep JWT protection while removing JAVARA's registration, login, account,
+and service-client management APIs, use:
+
+```yaml
+app:
+  features:
+    auth-api: false
+    resource-server: true
+    rate-limiting: false
+  security:
+    service-auth:
+      enabled: false
+    jwt:
+      transport: BEARER
+      signing-key: "<base64 key with at least 32 decoded bytes>"
+  email:
+    enabled: false
+```
+
+With `auth-api` disabled, its built-in routes return `404`; JWT-protected
+application routes still require a valid JAVARA-compatible token. The current
+resource server validates JAVARA's token claims and active user sessions or
+registered service clients; it is not a general-purpose external-issuer/JWKS
+integration. This profile does not issue user tokens, so another trusted
+JAVARA-compatible identity deployment must issue them and share the required
+active session data.
+
+If `resource-server` is disabled, the API filter chain does not validate bearer
+tokens and unmatched routes are public. Method-level `@PreAuthorize` checks
+remain active, so routes that require an authenticated principal may still
+deny requests. Do not disable this module for protected endpoints.
 
 ## Application identity and email attribution
 
@@ -49,16 +112,46 @@ Timestamps, JWT issue/expiry times, and database `Instant` values remain
 absolute instants and are not shifted by this setting. Format timestamps in
 the user's timezone at the client when they are user-specific.
 
-## Database and Redis
+## Database connection and pooling
 
-Configure PostgreSQL under `spring.datasource` and Redis under
-`spring.data.redis`. `make setup` writes these values for you. The application
-needs both services: PostgreSQL stores users and refresh-token hashes; Redis
-stores short-lived rate-limit counters.
+`make setup` configures the initial PostgreSQL connection. Use `make db-setup`
+later to update the connection or tune its HikariCP pool without rewriting
+module, email, or token settings. The command writes
+`config/database.yml`, prompts before replacing it, and stores the password in
+that Git-ignored file with restricted permissions. It adds the fragment to
+`spring.config.import` in `config/application.yml` when needed.
 
-Use separate credentials and service instances for development, testing, and
-production. Do not use the dedicated integration-test database as the
-application database.
+The standard pool values are:
+
+```yaml
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      validation-timeout: 5000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+```
+
+Timeouts are milliseconds in YAML; `make db-setup` accepts values such as
+`30s`, `5s`, and `10m`. Pool size must fit the database connection budget:
+account for every JAVARA replica and reserve connections for migrations,
+administration, and other services. The defaults are starting values, not a
+capacity recommendation for every deployment.
+
+Redis under `spring.data.redis` is required only when authentication rate
+limiting is enabled. `make setup` asks for Redis settings only in that case.
+PostgreSQL stores application records; Redis stores short-lived rate-limit
+counters. Use separate credentials and service instances for development,
+testing, and production. Do not use the dedicated integration-test database
+as the application database.
+
+`make db-setup` validates pool sizes and timeout ranges before writing. Its
+configuration is imported after `config/application.yml`, so these database
+settings override the initial database values while leaving other settings
+unchanged.
 
 ## Email delivery and verification
 
@@ -107,8 +200,10 @@ externally reachable HTTPS URL before using a production-like profile.
 
 At startup, JAVARA fails with an actionable message if email is enabled but
 the SMTP host, sender address, or a required authentication credential is
-missing. With `prod`, `production`, or `staging`, email cannot be disabled,
-SMTP must use STARTTLS or SSL, and `app.email.public-base-url` must use HTTPS.
+missing. With `prod`, `production`, or `staging`, email cannot be disabled
+while `auth-api` is enabled; SMTP must use STARTTLS or SSL, and
+`app.email.public-base-url` must use HTTPS. For local development, email can
+be disabled, but verification and security notifications will not be sent.
 Automated tests use the isolated `src/test/resources/application.yml`
 configuration and do not load SMTP credentials from `config/application.yml`.
 Email-specific tests use a test delivery implementation rather than a live SMTP
@@ -263,13 +358,12 @@ app:
 
 The counters use the client IP and a fixed time window. Use distinct key
 prefixes for environments sharing Redis. Exceeded limits return `429` with a
-`Retry-After` header. Redis is required at startup even if all auth limiters
-are disabled. JAVARA checks Redis connectivity before accepting requests and,
-when any auth limiter is enabled, also runs a rate-limit operation against
-Redis. If Redis becomes unavailable after startup, a limited request returns
-`503`; JAVARA does not silently bypass the limit. Redis connection and
-command timeouts should be bounded; the generated setup uses two-second
-timeouts.
+`Retry-After` header. When any auth limiter is enabled, JAVARA checks Redis
+connectivity and performs a rate-limit operation before accepting requests.
+If Redis becomes unavailable after startup, a limited request returns `503`;
+JAVARA does not silently bypass the limit. Redis is not required when all
+limiters are disabled or `auth-api` is off. Redis connection and command
+timeouts should be bounded; the generated setup uses two-second timeouts.
 
 ## Suspicious authentication and temporary account locks
 
@@ -331,6 +425,48 @@ trusted proxy handling before relying on client addresses behind a proxy; with
 the default forwarded-header strategy, the direct peer address is used. SMTP
 must be configured for email alerts. The user lock expires automatically;
 the application does not permanently deactivate the account.
+
+## TLS and mutual TLS
+
+TLS and mTLS are opt-in. By default, JAVARA does not terminate HTTPS itself.
+For a deployment where a reverse proxy or load balancer handles public HTTPS,
+keep application TLS disabled and secure the private connection between the
+proxy and JAVARA according to the deployment network design.
+
+To terminate HTTPS in the application, run:
+
+```bash
+make tls-setup
+```
+
+Provide a readable PKCS12 or JKS keystore path. The path must not contain
+whitespace. Keep the keystore outside the repository and mount it into the
+runtime environment. Set `SERVER_SSL_KEY_STORE_PASSWORD` through the process
+environment or deployment secret manager; the password is not written to the
+configuration file. Missing or invalid TLS material prevents startup.
+`make tls-setup` writes `config/tls.yml` and adds its optional import to
+`config/application.yml` when needed.
+
+Inbound mTLS additionally requires clients to present certificates trusted by
+JAVARA. Configure server TLS first, then run:
+
+```bash
+make mtls-setup
+```
+
+When enabled, client authentication is required (`need`), and the truststore
+must contain the issuing CA or client certificates. Set
+`SERVER_SSL_TRUST_STORE_PASSWORD` through the process environment or secret
+manager. Clients without a trusted certificate cannot establish a connection.
+This setup covers **inbound HTTPS only**; outbound mTLS to downstream services
+is not currently configured by these commands.
+
+The mTLS command refuses to enable client authentication unless application
+TLS is configured. Disable mTLS before disabling application TLS. Each setup
+command writes its own ignored file (`config/tls.yml` or `config/mtls.yml`)
+and adds the optional import to `config/application.yml` when needed. Protect
+keystores and truststores as secrets, rotate them through your deployment
+process, and never commit them.
 
 ## Reverse proxies and client IPs
 

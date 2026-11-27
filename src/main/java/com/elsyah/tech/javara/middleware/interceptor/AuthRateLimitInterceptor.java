@@ -3,6 +3,7 @@ package com.elsyah.tech.javara.middleware.interceptor;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -14,6 +15,16 @@ import com.elsyah.tech.javara.middleware.ratelimit.RegisterRateLimitProperties;
 import com.elsyah.tech.javara.middleware.ratelimit.SessionReauthRateLimitProperties;
 
 @Component
+@ConditionalOnProperty(
+        prefix = "app.features",
+        name = "rate-limiting",
+        havingValue = "true",
+        matchIfMissing = true)
+@ConditionalOnProperty(
+        prefix = "app.features",
+        name = "auth-api",
+        havingValue = "true",
+        matchIfMissing = true)
 public class AuthRateLimitInterceptor implements HandlerInterceptor {
     private static final String LOGIN_PATH = "/api/v1/auth/login";
     private static final String MFA_LOGIN_OTP_PATH =
