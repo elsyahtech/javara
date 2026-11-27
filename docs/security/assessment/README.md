@@ -4,8 +4,8 @@
 
 The assessment is in progress. The initial V6/V7 source review recorded 21
 requirements as failing. Remediation for some findings is included in commit
-`b009b8a` and the current worktree, but the current disposition is 5 `Fail`,
-16 `Pending`, and 324
+`b009b8a` and the current worktree, but the current disposition is 4 `Fail`,
+17 `Pending`, and 324
 `Not assessed`; none is verified as `Pass`. Do not use this record as a
 production-readiness or compliance claim.
 
@@ -37,10 +37,10 @@ Auditor approval and a documented rationale.
 
 Retest pending V6/V7 remediations and address the remaining known gaps:
 context-specific password checks, approved production password datasets,
-phishing-resistant MFA, suspicious-authentication detection, sensitive
-operation step-up, password recovery, and admin password reset. Public
-registration anti-enumeration is implemented in the current worktree and
-requires local retesting.
+phishing-resistant MFA, suspicious-authentication verification and deployment
+evidence, sensitive-operation step-up, password recovery, and admin password
+reset. Public registration anti-enumeration is implemented in the current
+worktree and requires local retesting.
 Continue requirement-by-requirement review of the remaining ASVS chapters,
-and keep tenant isolation and production/operations evidence as separate
-workstreams.
+retest AUTH-06 and AUTH-08 locally, and keep tenant isolation and
+production/operations evidence as separate workstreams.

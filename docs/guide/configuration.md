@@ -271,6 +271,67 @@ Redis. If Redis becomes unavailable after startup, a limited request returns
 command timeouts should be bounded; the generated setup uses two-second
 timeouts.
 
+## Suspicious authentication and temporary account locks
+
+Suspicious-authentication controls are enabled by default. Configure them
+separately with `make security-setup`; this writes only to the ignored
+`config/security.yml` and adds its optional import to
+`config/application.yml`. `make setup` and `make install` remain focused on
+initial application configuration. Deployment configuration can override
+security settings without changing Java code. All four signals are enabled by
+default:
+
+1. Repeated failed password sign-ins (5 attempts in 10 minutes by default).
+2. A successful sign-in from a different network source than the last successful
+   sign-in for that account.
+3. Repeated failed MFA verifications (5 attempts in 10 minutes by default).
+4. Password changes and MFA enrollment, preference, or disable operations.
+
+```yaml
+# config/security.yml
+app:
+  security:
+    suspicious-authentication:
+      enabled: true
+      failed-login:
+        enabled: true
+        threshold: 5
+        window: 10m
+        lock-duration: 15m
+        action: LOCK_AND_NOTIFY
+      new-source:
+        enabled: true
+        action: NOTIFY
+        lock-duration: 15m
+      failed-mfa:
+        enabled: true
+        threshold: 5
+        window: 10m
+        lock-duration: 15m
+        action: LOCK_AND_NOTIFY
+      security-change:
+        enabled: true
+        action: NOTIFY
+        lock-duration: 15m
+```
+
+Each signal can be disabled independently, or all can be disabled with the
+top-level `enabled` switch. `action` accepts `NOTIFY`, `TEMPORARY_LOCK`, or
+`LOCK_AND_NOTIFY`. Thresholds, time windows, and temporary-lock durations are
+configurable; windows are limited to 24 hours and locks to 7 days. The default
+locks the account temporarily after repeated password or MFA failures, while
+new-source and security-change events only notify. The successful source is
+stored as a keyed hash, not as a raw IP address, and currently represents the
+network address—not a device fingerprint. Only the most recent successful
+source is compared.
+
+Treat lockout settings as a risk decision: locking on a new source or security
+change can block legitimate users and can be abused to deny service. Configure
+trusted proxy handling before relying on client addresses behind a proxy; with
+the default forwarded-header strategy, the direct peer address is used. SMTP
+must be configured for email alerts. The user lock expires automatically;
+the application does not permanently deactivate the account.
+
 ## Reverse proxies and client IPs
 
 On Spring Boot 4.2, configure forwarded headers with

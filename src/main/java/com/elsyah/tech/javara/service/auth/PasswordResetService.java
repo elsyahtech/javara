@@ -44,6 +44,7 @@ public class PasswordResetService {
     private final PasswordHashService passwordHashService;
     private final PasswordPolicyService passwordPolicyService;
     private final EmailNotificationService emailNotificationService;
+    private final SuspiciousAuthenticationService suspiciousAuthenticationService;
     private final Clock clock;
 
     public PasswordResetService(
@@ -54,6 +55,7 @@ public class PasswordResetService {
             PasswordHashService passwordHashService,
             PasswordPolicyService passwordPolicyService,
             EmailNotificationService emailNotificationService,
+            SuspiciousAuthenticationService suspiciousAuthenticationService,
             Clock clock) {
         this.userRepository = userRepository;
         this.tokenRepository = tokenRepository;
@@ -62,6 +64,7 @@ public class PasswordResetService {
         this.passwordHashService = passwordHashService;
         this.passwordPolicyService = passwordPolicyService;
         this.emailNotificationService = emailNotificationService;
+        this.suspiciousAuthenticationService = suspiciousAuthenticationService;
         this.clock = clock;
     }
 
@@ -240,6 +243,7 @@ public class PasswordResetService {
         tokenRepository.save(token);
         audit(userId, userId, "RECOVERY_COMPLETED", null, now);
         emailNotificationService.passwordChanged(user.getEmail());
+        suspiciousAuthenticationService.securityChange(user, "password was changed");
         return new ServiceResult<>(null, HttpStatus.OK, "Password reset successfully");
     }
 

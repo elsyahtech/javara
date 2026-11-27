@@ -41,6 +41,7 @@ import com.elsyah.tech.javara.request.user.UserUpdateRequest;
 import com.elsyah.tech.javara.request.auth.LoginRequest;
 import com.elsyah.tech.javara.service.user.PasswordPolicyService;
 import com.elsyah.tech.javara.service.user.UserService;
+import com.elsyah.tech.javara.service.auth.SuspiciousAuthenticationService;
 import com.elsyah.tech.javara.service.common.ServiceResult;
 import com.elsyah.tech.javara.service.email.EmailNotificationService;
 import com.elsyah.tech.javara.service.email.EmailVerificationService;
@@ -71,6 +72,7 @@ class UserServiceTests {
                 allowedPasswordPolicy(),
                 mock(EmailNotificationService.class),
                 mock(EmailVerificationService.class),
+                mock(SuspiciousAuthenticationService.class),
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -84,6 +86,7 @@ class UserServiceTests {
                 allowedPasswordPolicy(),
                 mock(EmailNotificationService.class),
                 mock(EmailVerificationService.class),
+                mock(SuspiciousAuthenticationService.class),
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -122,6 +125,7 @@ class UserServiceTests {
                 passwordPolicyService,
                 mock(EmailNotificationService.class),
                 mock(EmailVerificationService.class),
+                mock(SuspiciousAuthenticationService.class),
                 Clock.fixed(NOW, ZoneOffset.UTC));
 
         ServiceResult<UserEntity> result = service.createUser(
@@ -296,6 +300,7 @@ class UserServiceTests {
                 allowedPasswordPolicy(),
                 mock(EmailNotificationService.class),
                 mock(EmailVerificationService.class),
+                mock(SuspiciousAuthenticationService.class),
                 Clock.fixed(NOW, ZoneOffset.UTC)).updateUser(uuid("user-1"), request);
 
         assertSame(user, result.data());
@@ -377,6 +382,7 @@ class UserServiceTests {
                 allowedPasswordPolicy(),
                 mock(EmailNotificationService.class),
                 mock(EmailVerificationService.class),
+                mock(SuspiciousAuthenticationService.class),
                 Clock.fixed(NOW, ZoneOffset.UTC)).updateUser(uuid("user-1"), request);
 
         assertEquals(HttpStatus.OK, result.status());
@@ -403,6 +409,7 @@ class UserServiceTests {
                 allowedPasswordPolicy(),
                 mock(EmailNotificationService.class),
                 mock(EmailVerificationService.class),
+                mock(SuspiciousAuthenticationService.class),
                 Clock.fixed(NOW, ZoneOffset.UTC));
         ServiceResult<Void> result =
                 service.changePassword(user.getId(), "current-password", "new-password-123");
@@ -431,6 +438,7 @@ class UserServiceTests {
                 allowedPasswordPolicy(),
                 mock(EmailNotificationService.class),
                 mock(EmailVerificationService.class),
+                mock(SuspiciousAuthenticationService.class),
                 Clock.fixed(NOW, ZoneOffset.UTC))
                 .changePassword(user.getId(), "incorrect-password", "new-password-123");
 
@@ -458,6 +466,7 @@ class UserServiceTests {
                 allowedPasswordPolicy(),
                 mock(EmailNotificationService.class),
                 mock(EmailVerificationService.class),
+                mock(SuspiciousAuthenticationService.class),
                 Clock.fixed(NOW, ZoneOffset.UTC))
                 .changePassword(user.getId(), "current-password", "current-password");
 
@@ -486,6 +495,7 @@ class UserServiceTests {
                 allowedPasswordPolicy(),
                 mock(EmailNotificationService.class),
                 mock(EmailVerificationService.class),
+                mock(SuspiciousAuthenticationService.class),
                 Clock.fixed(NOW, ZoneOffset.UTC))
                 .changePassword(
                         user.getId(),
@@ -519,6 +529,7 @@ class UserServiceTests {
                 passwordPolicyService,
                 mock(EmailNotificationService.class),
                 mock(EmailVerificationService.class),
+                mock(SuspiciousAuthenticationService.class),
                 Clock.fixed(NOW, ZoneOffset.UTC))
                 .changePassword(
                         user.getId(),

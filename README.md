@@ -93,6 +93,7 @@ Supported operations include:
 - USER/ADMIN roles with user ownership checks
 - Public user registration and configurable initial ADMIN bootstrap
 - Optional or required email OTP and WebAuthn passkey MFA
+- Configurable suspicious-authentication detection and temporary account locks
 - Redis-backed authentication rate limiting
 - Standard success and error response wrapper
 - Selected-column projection queries
@@ -200,6 +201,13 @@ make setup
 
 The setup first offers to install JDK 25 if needed, then asks for service connection details, initial ADMIN email/password, token transport, application name (default `JAVARA`), email attribution (default `JAVARA`), and an application timezone (IANA; default `UTC`). Enter `none` to omit the email's “Powered by” attribution. It generates an HS256 signing key, checks TCP reachability when `nc` is available, then saves the runtime configuration in `config/application.yml` with restricted file permissions. This local file is excluded from Git. `make run` loads this file as the application's configuration.
 
+Security controls are configured separately with `make security-setup`. It
+configures suspicious-authentication detection and response in
+`config/security.yml` without adding more security prompts to initial setup.
+The file is imported by `config/application.yml`, excluded from Git, and
+written with restricted file permissions. See the [security configuration
+guide](docs/guide/configuration.md#suspicious-authentication-and-temporary-account-locks).
+
 The setup check confirms that the host and port are reachable; the application verifies database and Redis credentials when it starts.
 
 On the first successful startup, the application creates the configured ADMIN account only if that email is unused. It refuses to promote an existing USER. After the ADMIN is created, remove the bootstrap password from `config/application.yml` and set `app.security.bootstrap-admin.enabled` to `false`.
@@ -282,6 +290,7 @@ src/main/resources/db/migration
 | `V8__track_compromised_password_hashes.sql` | Tracks invalidated credentials |
 | `V9__add_mfa_support.sql` | Adds MFA methods, challenges, passkey storage, and authentication methods |
 | `V10__bind_mfa_challenges_to_password.sql` | Invalidates MFA challenges when the user's password changes |
+| `V11__add_suspicious_authentication_controls.sql` | Adds temporary lockout counters and last successful source fingerprint |
 
 JAVARA migrations do not insert demo users or other example business data.
 Flyway applies versioned files in this directory at application startup.

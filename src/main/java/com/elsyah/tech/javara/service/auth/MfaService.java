@@ -87,6 +87,7 @@ public class MfaService {
     private final WebAuthnRelyingPartyOperations webAuthnOperations;
     private final ObjectMapper webAuthnObjectMapper;
     private final JwtProperties jwtProperties;
+    private final SuspiciousAuthenticationService suspiciousAuthenticationService;
     private final Clock clock;
 
     public MfaService(
@@ -103,6 +104,7 @@ public class MfaService {
             WebAuthnRelyingPartyOperations webAuthnOperations,
             ObjectMapper webAuthnObjectMapper,
             JwtProperties jwtProperties,
+            SuspiciousAuthenticationService suspiciousAuthenticationService,
             Clock clock) {
         this.properties = properties;
         this.challengeRepository = challengeRepository;
@@ -118,6 +120,7 @@ public class MfaService {
         this.webAuthnOperations = webAuthnOperations;
         this.webAuthnObjectMapper = webAuthnObjectMapper;
         this.jwtProperties = jwtProperties;
+        this.suspiciousAuthenticationService = suspiciousAuthenticationService;
         this.clock = clock;
     }
 
@@ -234,6 +237,7 @@ public class MfaService {
         MfaChallengeEntity challenge = challengeResult.data();
         challenge.setConsumedAt(clock.instant());
         enableMethod(userId, MfaMethod.EMAIL_OTP);
+        suspiciousAuthenticationService.securityChange(user, "email MFA was enrolled");
         revokeSessions(userId);
         return status(userId);
     }
@@ -282,6 +286,7 @@ public class MfaService {
         }
         challengeResult.data().setConsumedAt(clock.instant());
         enableMethod(userId, MfaMethod.WEBAUTHN);
+        suspiciousAuthenticationService.securityChange(user, "a passkey was enrolled");
         revokeSessions(userId);
         return status(userId);
     }
@@ -313,6 +318,10 @@ public class MfaService {
         challenge.setConsumedAt(clock.instant());
         if (challenge.getPurpose() == MfaChallengePurpose.REQUIRED_ENROLLMENT) {
             enableMethod(user.getId(), challenge.getMethod());
+            suspiciousAuthenticationService.securityChange(
+                    user, challenge.getMethod() == MfaMethod.WEBAUTHN
+                            ? "a passkey was enrolled"
+                            : "email MFA was enrolled");
         }
         return success(
                 new MfaLoginCompletion(user.getId(), challenge.getMethod()),
@@ -368,10 +377,12 @@ public class MfaService {
         }
         ServiceResult<Void> registration = registerCredential(challenge, label, credential);
         if (registration.isError()) {
+            recordLoginMfaFailure(challenge);
             return failure(registration.status(), registration.message());
         }
         challenge.setConsumedAt(clock.instant());
         enableMethod(user.getId(), MfaMethod.WEBAUTHN);
+        suspiciousAuthenticationService.securityChange(user, "a passkey was enrolled");
         return success(
                 new MfaLoginCompletion(user.getId(), MfaMethod.WEBAUTHN),
                 HttpStatus.OK,
@@ -402,6 +413,8 @@ public class MfaService {
             entry.setPreferred(entry.getMethod() == method);
             entry.setUpdatedAt(clock.instant());
         }
+        suspiciousAuthenticationService.securityChange(
+                optionalUser.get(), "the preferred MFA method was changed");
         revokeSessions(userId);
         return status(userId);
     }
@@ -447,6 +460,8 @@ public class MfaService {
                         entry.setUpdatedAt(clock.instant());
                     });
         }
+        suspiciousAuthenticationService.securityChange(
+                optionalUser.get(), "an MFA method was disabled");
         revokeSessions(userId);
         return status(userId);
     }
@@ -609,6 +624,7 @@ public class MfaService {
         if (challenge.getAttempts() >= properties.maxAttempts()) {
             challenge.setConsumedAt(clock.instant());
         }
+        recordLoginMfaFailure(challenge);
         return failure(HttpStatus.UNAUTHORIZED, invalidChallengeMessage());
     }
 
@@ -677,7 +693,15 @@ public class MfaService {
         if (challenge.getAttempts() >= properties.maxAttempts()) {
             challenge.setConsumedAt(clock.instant());
         }
+        recordLoginMfaFailure(challenge);
         return failure(HttpStatus.UNAUTHORIZED, invalidChallengeMessage());
+    }
+
+    private void recordLoginMfaFailure(MfaChallengeEntity challenge) {
+        if (challenge.getPurpose() == MfaChallengePurpose.LOGIN
+                || challenge.getPurpose() == MfaChallengePurpose.REQUIRED_ENROLLMENT) {
+            suspiciousAuthenticationService.recordFailedMfa(challenge.getUserId());
+        }
     }
 
     private MfaChallengeEntity newChallenge(

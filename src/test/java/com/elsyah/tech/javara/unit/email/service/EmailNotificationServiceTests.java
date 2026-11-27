@@ -78,6 +78,30 @@ class EmailNotificationServiceTests {
     }
 
     @Test
+    void suspiciousAuthenticationEmailUsesApplicationBrandAndTrustedResponseAdvice() {
+        ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
+        EmailNotificationService service = service(true, publisher);
+
+        service.suspiciousAuthentication(
+                "person@example.com",
+                "Repeated unsuccessful sign-in attempts were detected.");
+
+        ArgumentCaptor<EmailMessageEvent> eventCaptor =
+                ArgumentCaptor.forClass(EmailMessageEvent.class);
+        verify(publisher).publishEvent(eventCaptor.capture());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                EmailEventType.SUSPICIOUS_AUTHENTICATION,
+                eventCaptor.getValue().type());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "Test Suite App security alert: sign-in activity",
+                eventCaptor.getValue().subject());
+        org.junit.jupiter.api.Assertions.assertTrue(eventCaptor.getValue().body().contains(
+                "Repeated unsuccessful sign-in attempts were detected."));
+        org.junit.jupiter.api.Assertions.assertTrue(eventCaptor.getValue().body().contains(
+                "using a trusted channel"));
+    }
+
+    @Test
     void disabledEmailDoesNotPublishMessage() {
         ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
 

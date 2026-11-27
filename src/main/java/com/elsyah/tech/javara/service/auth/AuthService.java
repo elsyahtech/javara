@@ -41,6 +41,7 @@ public class AuthService {
     private final SessionProperties sessionProperties;
     private final EmailNotificationService emailNotificationService;
     private final MfaService mfaService;
+    private final SuspiciousAuthenticationService suspiciousAuthenticationService;
     private final Clock clock;
 
     public AuthService(
@@ -52,6 +53,7 @@ public class AuthService {
             SessionProperties sessionProperties,
             EmailNotificationService emailNotificationService,
             MfaService mfaService,
+            SuspiciousAuthenticationService suspiciousAuthenticationService,
             Clock clock) {
         this.userService = userService;
         this.userRepository = userRepository;
@@ -61,13 +63,28 @@ public class AuthService {
         this.sessionProperties = sessionProperties;
         this.emailNotificationService = emailNotificationService;
         this.mfaService = mfaService;
+        this.suspiciousAuthenticationService = suspiciousAuthenticationService;
         this.clock = clock;
     }
 
     @Transactional
     public AuthServiceResult login(LoginRequest request) {
+        return login(request, null);
+    }
+
+    @Transactional
+    public AuthServiceResult login(LoginRequest request, String remoteAddress) {
         ServiceResult<UserEntity> login = userService.login(request);
         if (login.isError()) {
+            if (login.status() == HttpStatus.UNAUTHORIZED
+                    && request.email() != null
+                    && !request.email().isBlank()) {
+                userRepository.findByEmailForUpdate(request.email())
+                        .filter(user -> Boolean.TRUE.equals(user.getIsActive())
+                                && user.isEmailVerified()
+                                && !user.isPasswordResetRequired())
+                        .ifPresent(suspiciousAuthenticationService::recordFailedPassword);
+            }
             return AuthServiceResult.failure(login.status(), login.message());
         }
 
@@ -78,6 +95,12 @@ public class AuthService {
                     HttpStatus.UNAUTHORIZED,
                     "Invalid email or password");
         }
+        if (suspiciousAuthenticationService.isLocked(lockedUser.get())) {
+            return AuthServiceResult.failure(
+                    HttpStatus.UNAUTHORIZED,
+                    "Invalid email or password");
+        }
+        suspiciousAuthenticationService.resetPasswordFailures(lockedUser.get());
 
         ServiceResult<MfaChallengeResponse> mfa =
                 mfaService.beginLogin(lockedUser.get(), request.mfaMethod());
@@ -87,39 +110,62 @@ public class AuthService {
         if (mfa.data() != null) {
             return AuthServiceResult.challenge(mfa.data(), mfa.message());
         }
-        return issueLoginTokens(lockedUser.get(), List.of("pwd"));
+        return issueLoginTokens(lockedUser.get(), List.of("pwd"), remoteAddress);
     }
 
     @Transactional
     public AuthServiceResult verifyMfaOtpLogin(UUID challengeId, String code) {
+        return verifyMfaOtpLogin(challengeId, code, null);
+    }
+
+    @Transactional
+    public AuthServiceResult verifyMfaOtpLogin(
+            UUID challengeId, String code, String remoteAddress) {
         ServiceResult<MfaLoginCompletion> verification =
                 mfaService.verifyLoginOtp(challengeId, code);
         if (verification.isError()) {
             return AuthServiceResult.failure(verification.status(), verification.message());
         }
-        return completeMfaLogin(verification.data());
+        return completeMfaLogin(verification.data(), remoteAddress);
     }
 
     @Transactional
     public AuthServiceResult verifyMfaPasskeyLogin(
             UUID challengeId, tools.jackson.databind.JsonNode credential) {
+        return verifyMfaPasskeyLogin(challengeId, credential, null);
+    }
+
+    @Transactional
+    public AuthServiceResult verifyMfaPasskeyLogin(
+            UUID challengeId,
+            tools.jackson.databind.JsonNode credential,
+            String remoteAddress) {
         ServiceResult<MfaLoginCompletion> verification =
                 mfaService.verifyLoginPasskey(challengeId, credential);
         if (verification.isError()) {
             return AuthServiceResult.failure(verification.status(), verification.message());
         }
-        return completeMfaLogin(verification.data());
+        return completeMfaLogin(verification.data(), remoteAddress);
     }
 
     @Transactional
     public AuthServiceResult completeRequiredPasskeyEnrollment(
             UUID challengeId, String label, tools.jackson.databind.JsonNode credential) {
+        return completeRequiredPasskeyEnrollment(challengeId, label, credential, null);
+    }
+
+    @Transactional
+    public AuthServiceResult completeRequiredPasskeyEnrollment(
+            UUID challengeId,
+            String label,
+            tools.jackson.databind.JsonNode credential,
+            String remoteAddress) {
         ServiceResult<MfaLoginCompletion> enrollment =
                 mfaService.completeRequiredPasskeyEnrollment(challengeId, label, credential);
         if (enrollment.isError()) {
             return AuthServiceResult.failure(enrollment.status(), enrollment.message());
         }
-        return completeMfaLogin(enrollment.data());
+        return completeMfaLogin(enrollment.data(), remoteAddress);
     }
 
     @Transactional
@@ -227,7 +273,7 @@ public class AuthService {
     }
 
     private AuthServiceResult issueLoginTokens(
-            UserEntity user, List<String> authenticationMethods) {
+            UserEntity user, List<String> authenticationMethods, String remoteAddress) {
         Instant now = clock.instant();
         long activeSessions = refreshTokenRepository.countActiveSessions(
                 user.getId(),
@@ -237,6 +283,11 @@ public class AuthService {
             return AuthServiceResult.failure(
                     HttpStatus.CONFLICT,
                     "Maximum number of active sessions reached");
+        }
+        if (!suspiciousAuthenticationService.recordSuccessfulSource(user, remoteAddress)) {
+            return AuthServiceResult.failure(
+                    HttpStatus.UNAUTHORIZED,
+                    "Invalid email or password");
         }
         AuthServiceResult result = issueTokens(
                 user,
@@ -249,19 +300,22 @@ public class AuthService {
         return result;
     }
 
-    private AuthServiceResult completeMfaLogin(MfaLoginCompletion completion) {
+    private AuthServiceResult completeMfaLogin(
+            MfaLoginCompletion completion, String remoteAddress) {
         Optional<UserEntity> optionalUser =
                 userRepository.findByIdForUpdate(completion.userId());
         if (optionalUser.isEmpty()
                 || !Boolean.TRUE.equals(optionalUser.get().getIsActive())
                 || !optionalUser.get().isEmailVerified()
-                || optionalUser.get().isPasswordResetRequired()) {
+                || optionalUser.get().isPasswordResetRequired()
+                || suspiciousAuthenticationService.isLocked(optionalUser.get())) {
             return AuthServiceResult.failure(
                     HttpStatus.UNAUTHORIZED,
                     "MFA challenge is invalid, expired, or has already been used");
         }
+        suspiciousAuthenticationService.resetMfaFailures(optionalUser.get());
         String method = completion.method() == MfaMethod.WEBAUTHN ? "hwk" : "otp";
-        return issueLoginTokens(optionalUser.get(), List.of("pwd", method));
+        return issueLoginTokens(optionalUser.get(), List.of("pwd", method), remoteAddress);
     }
 
     private static List<String> storedAuthenticationMethods(RefreshTokenEntity token) {

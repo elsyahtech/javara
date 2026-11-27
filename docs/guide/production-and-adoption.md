@@ -16,6 +16,8 @@ your product before using real accounts or sensitive data.
 - Redis-based per-IP limits for login, registration, and refresh
 - SMTP email verification for public registrations and security notifications
 - Optional email OTP and WebAuthn passkey MFA with deployment-wide policy
+- Configurable suspicious-authentication detection, email alerts, and temporary
+  account locks
 - Configurable common and compromised-password checks using operator-managed
   offline datasets
 - Unit and isolated PostgreSQL/Redis integration tests
@@ -81,6 +83,20 @@ required factor policy, supported authenticators, origin/RP settings, and
 recovery process. Login MFA currently does not provide step-up verification
 for sensitive operations. Do not claim Level 3 MFA compliance based only on
 the presence of these code paths.
+
+### Suspicious authentication and temporary account locks
+
+The application enables configurable detection for repeated password/MFA
+failures, a changed successful network source, and password/MFA security
+changes. Defaults temporarily lock accounts after repeated password or MFA
+failures and send notifications for changed sources and security settings.
+Thresholds, windows, lock durations, and actions are configurable at setup and
+in deployment YAML. Review these settings against support and availability
+requirements: account locks can be abused for denial of service, especially if
+configured for new-source or security-change events. Source detection compares
+only the latest successful network address and is not device identification.
+Configure trusted proxy handling before using source detection behind a proxy,
+and verify SMTP alert delivery in the target environment.
 
 ### Password policy datasets
 

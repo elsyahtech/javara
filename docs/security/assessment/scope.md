@@ -4,7 +4,7 @@
 
 The assessment is in progress. The pinned source baseline review of V6 and V7
 recorded 21 requirements as failing. Remediation in commit `b009b8a` and the
-current worktree changes that disposition to 5 `Fail`, 16 `Pending`, and 324
+current worktree changes that disposition to 4 `Fail`, 17 `Pending`, and 324
 `Not assessed`; none is verified as `Pass`. These remediation changes are not
 part of the pinned baseline. See the [authentication and session management
 review](authentication-session-review.md).

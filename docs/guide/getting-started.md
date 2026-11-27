@@ -89,6 +89,15 @@ do not already exist.
 The application verifies the actual database and Redis credentials when it
 starts.
 
+Configure authentication security separately when ready:
+
+```bash
+make security-setup
+```
+
+This writes suspicious-authentication detection and response settings to
+`config/security.yml`; it does not replace the initial application settings.
+
 Start the API after setup:
 
 ```bash
@@ -132,6 +141,7 @@ Never point tests at a database containing data you need.
 |---|---|
 | `make install` | Install/check local prerequisites and start local services |
 | `make setup` | Configure connections to existing PostgreSQL and Redis services |
+| `make security-setup` | Configure authentication threat detection and response separately |
 | `make run` | Start the Spring Boot API |
 | `make test` | Run unit and integration tests |
 | `make build` | Build the application package |

@@ -174,6 +174,8 @@ server:
       - text/plain
     min-response-size: 1KB
 spring:
+  config:
+    import: optional:file:./config/security.yml
   profiles:
     active: local
   mail:

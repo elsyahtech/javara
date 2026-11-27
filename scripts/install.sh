@@ -322,6 +322,8 @@ server:
       - text/plain
     min-response-size: 1KB
 spring:
+  config:
+    import: optional:file:./config/security.yml
   profiles:
     active: local
   mail:
@@ -400,6 +402,7 @@ app:
       breached-password-hashes-file: ./config/security/breached-password-hashes.txt
     password:
       algorithm: ARGON2
+
     jwt:
       signing-key: $(yaml_quote "$signing_key")
       transport: $(printf '%s' "$token_transport" | tr '[:lower:]' '[:upper:]')

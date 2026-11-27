@@ -129,6 +129,26 @@ public class EmailNotificationService {
                         + "change your password and contact your administrator.");
     }
 
+    public void suspiciousAuthentication(String recipient, String detail) {
+        publish(
+                EmailEventType.SUSPICIOUS_AUTHENTICATION,
+                recipient,
+                applicationIdentity.name() + " security alert: sign-in activity",
+                detail + "\n\nIf you do not recognize this activity, change your password "
+                        + "and contact your administrator using a trusted channel.");
+    }
+
+    public void securitySettingsChanged(String recipient, String detail) {
+        publish(
+                EmailEventType.SECURITY_SETTINGS_CHANGED,
+                recipient,
+                applicationIdentity.name() + " security settings changed",
+                "A security setting was changed for your " + applicationIdentity.name()
+                        + " account: " + detail
+                        + ". If you did not make this change, contact your administrator "
+                        + "using a trusted channel.");
+    }
+
     public void mfaOneTimeCode(String recipient, String code, Duration tokenTtl) {
         publish(
                 EmailEventType.MFA_ONE_TIME_CODE,

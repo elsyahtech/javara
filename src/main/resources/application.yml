@@ -27,3 +27,25 @@ app:
       enabled: true
       common-passwords-file: ./config/security/common-passwords.txt
       breached-password-hashes-file: ./config/security/breached-password-hashes.txt
+    suspicious-authentication:
+      enabled: true
+      failed-login:
+        enabled: true
+        threshold: 5
+        window: 10m
+        lock-duration: 15m
+        action: LOCK_AND_NOTIFY
+      new-source:
+        enabled: true
+        action: NOTIFY
+        lock-duration: 15m
+      failed-mfa:
+        enabled: true
+        threshold: 5
+        window: 10m
+        lock-duration: 15m
+        action: LOCK_AND_NOTIFY
+      security-change:
+        enabled: true
+        action: NOTIFY
+        lock-duration: 15m

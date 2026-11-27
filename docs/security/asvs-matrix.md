@@ -6,7 +6,7 @@
 |---|---|
 | Standard | OWASP Application Security Verification Standard (ASVS) v5.0.0 |
 | Requested target | Level 3 |
-| Assessment status | In progress; 5 requirements `Fail`, 16 `Pending`, 324 `Not assessed`, none `Pass`; see [assessment record](assessment/README.md) |
+| Assessment status | In progress; 4 requirements `Fail`, 17 `Pending`, 324 `Not assessed`, none `Pass`; see [assessment record](assessment/README.md) |
 | Assessor and assessment date | To be completed |
 | Intended use | Reusable JAVARA baseline for banking, finance/fintech, energy, and startup solutions |
 | Product objective | Modular, configurable, secure foundation for multi-company solutions; not yet assessed |
@@ -40,7 +40,7 @@ for an explicit decision rather than silently marking it `Not applicable`.
 
 The initial V6/V7 source review recorded 21 requirements as `Fail`. Following
 remediation in commit `b009b8a` and local verification, the current disposition
-is 5 `Fail`, 16 `Pending` retest/evidence, and 324 `Not assessed`. No
+is 4 `Fail`, 17 `Pending` retest/evidence, and 324 `Not assessed`. No
 requirement is currently marked `Pass` or excluded. See the
 [authentication and session management
 review](assessment/authentication-session-review.md) for scope, evidence, and
@@ -263,7 +263,7 @@ It is not endorsed by OWASP.
 | `v5.0.0-V6.3.2` | L1 | Pending | Not assessed |  |  |
 | `v5.0.0-V6.3.3` | L2 | In scope | Fail | [AUTH-05](assessment/authentication-session-review.md#auth-05) | Local Email OTP enrollment/login and session revocation manually verified; verify production WebAuthn policy, authenticators, and phishing resistance. |
 | `v5.0.0-V6.3.4` | L2 | Pending | Not assessed |  |  |
-| `v5.0.0-V6.3.5` | L3 | In scope | Fail | [AUTH-06](assessment/authentication-session-review.md#auth-06) | Owner TBD; test suspicious-auth detection and notifications. |
+| `v5.0.0-V6.3.5` | L3 | In scope | Pending | [AUTH-06](assessment/authentication-session-review.md#auth-06) | Local retest confirms generic failures, lock-alert emails, rejection during an active lock, and successful sign-in after 15 minutes; source-change/security-change paths and requirement review remain. |
 | `v5.0.0-V6.3.6` | L3 | Pending | Not assessed |  |  |
 | `v5.0.0-V6.3.7` | L3 | In scope | Pending | [AUTH-07](assessment/authentication-session-review.md#auth-07) | Email notifications implemented; verify all event delivery and failure/retry handling. |
 | `v5.0.0-V6.3.8` | L3 | In scope | Pending | [AUTH-08](assessment/authentication-session-review.md#auth-08) | Registration returns the same generic response for new and existing addresses; automated checks and local retest pass. Complete requirement review, including timing considerations, remains. |

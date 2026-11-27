@@ -13,8 +13,8 @@ penetration test, certification, or production-readiness claim.
   documentation only.
 - Current review date: 2026-11-27. Remediation evidence below reflects commit
   `b009b8a` and local manual tests, not an independent reassessment.
-- Initial baseline: 21 requirements marked `Fail`. Current disposition: 5
-  `Fail`, 16 `Pending` retest/evidence, and 324 `Not assessed`.
+- Initial baseline: 21 requirements marked `Fail`. Current disposition: 4
+  `Fail`, 17 `Pending` retest/evidence, and 324 `Not assessed`.
 - No requirement is marked `Pass` or excluded.
 
 The historical findings below are confirmed for the pinned baseline. Current
@@ -39,6 +39,60 @@ password recovery, or access-token revocation.
 After subsequent authentication, session, password-policy, and email changes,
 the complete Maven test suite also passed: 198 tests, 0 failures, 0 errors,
 0 skipped (`bash scripts/maven.sh test`).
+
+For the current AUTH-06 worktree, `make test` passed 225 tests with 0 failures,
+0 errors, and 0 skipped. The focused AUTH-06/authentication/email selection
+passed another 24 tests after two additional login-lock tests were added. These
+are automated results; a partial local manual AUTH-06 retest is recorded below.
+
+### AUTH-06 local retest checklist
+
+Use a disposable verified account, not an account needed for ongoing work.
+Temporarily lower the lock policy in the ignored `config/security.yml`,
+restart the application, and restore the desired configuration afterward:
+
+1. Run `make security-setup`, then set failed-login `threshold: 2`,
+   `window: 5m`, `lock-duration: 1m`, and
+   `action: LOCK_AND_NOTIFY`. Submit two incorrect passwords, confirm both
+   responses remain generic, and check for the security-alert email. A correct
+   password should remain rejected during the temporary lock; sign-in should
+   work again after expiry.
+2. Set the failed-MFA threshold to `2` and its action to `LOCK_AND_NOTIFY`.
+   Keep `app.security.mfa.max-attempts` above `2` so the challenge remains
+   available long enough to exercise the account-level lock. Submit two
+   incorrect OTPs, confirm the alert and temporary lock, then verify the
+   account can sign in after the lock expires.
+3. Perform a password change and an MFA enrollment/preference change, then
+   confirm the configured security-change notification behavior.
+4. To check source-change detection, authenticate successfully from a second
+   network address. Do not spoof forwarded headers; configure and trust a real
+   reverse proxy before testing proxy-provided client addresses.
+
+Record only outcomes and status codes, not passwords, OTPs, tokens, or raw
+network addresses. Keep AUTH-06 `Pending` until these local checks and the
+requirement-specific review are completed.
+
+#### Partial local manual retest — 2026-11-27
+
+The user tested two different verified accounts with the configured threshold
+of five attempts:
+
+- Five incorrect password logins each returned `401` with the same generic
+  `"Invalid email or password"` response. On the fifth attempt, the configured
+  temporary lock triggered and the suspicious-sign-in alert email arrived
+  with the lock expiry.
+- A login on a separate account with email OTP MFA sent the expected
+  anti-phishing warning. Five incorrect OTP verifications each returned
+  `401` with the generic invalid/expired/used challenge response. On the fifth
+  attempt, the configured temporary lock triggered and the MFA security alert
+  email arrived with the lock expiry.
+
+The user then tried the correct password while the account was locked; the
+login still returned `401` with the same generic
+`"Invalid email or password"` response. After waiting 15 minutes, login
+succeeded with `200` and access/refresh tokens, confirming sign-in recovery
+after the temporary lock. The new-source and security-change notification
+paths have not yet been verified, so AUTH-06 remains `Pending`.
 
 Local manual API checks on 2026-11-26, using the local setup and Gmail SMTP,
 observed:
@@ -319,7 +373,7 @@ Only `Pass` can indicate a verified requirement; none is claimed here.
 | AUTH-03 | V6.2.4 | The baseline had no disallowed-password dataset check. | `Pending` — policy is applied at registration, password change, and bootstrap; production requires at least 3,000 entries. Only illustrative local data is present, so approved dataset evidence is outstanding. |
 | AUTH-04 | V6.2.12 | The baseline had no breached-password check in password creation or update. | `Pending` — offline hash lookup is implemented and tested; the sample hash file is not a production breach corpus. Source, license, coverage, freshness, and production deployment evidence are outstanding. |
 | AUTH-05 | V6.3.3 | The initial production guide listed multi-factor authentication as unavailable. Level 3 requires a phishing-resistant hardware-based factor unless an accepted rationale and comprehensive mitigations apply. See [production boundaries](../../guide/production-and-adoption.md). | `Fail` — login supports WebAuthn passkeys and email OTP, but MFA is optional by default, email OTP is not phishing-resistant, and no production authenticator or WebAuthn-only policy has been independently verified. |
-| AUTH-06 | V6.3.5 | No mechanism was found to detect and notify users of suspicious successful or unsuccessful authentication attempts. | `Fail` — new-session notices alone do not provide suspicious-authentication detection and response. |
+| AUTH-06 | V6.3.5 | No mechanism was found to detect and notify users of suspicious successful or unsuccessful authentication attempts. | `Pending` — deployment-configurable detectors cover repeated failed password/MFA checks, a changed successful network source, and security-setting changes. Automated tests passed; local retest confirmed generic failure responses, alert/temporary-lock emails on the fifth password and MFA failures, rejection of the correct password during an active lock, and successful sign-in after waiting 15 minutes. Source-change and security-change paths, trusted-proxy review, and complete requirement-specific assessment remain. |
 | AUTH-07 | V6.3.7 | The baseline had no notification flow for authentication-detail changes. | `Pending` — verification, email-change, new-session, and password-change messages were received locally; emergency-reset and recovery email paths have automated coverage. An SMTP failure was caught and logged without message contents. Durable retry/outbox and production operational evidence remain outstanding. |
 | AUTH-08 | V6.3.8 | Login uses a generic invalid-credentials message, but duplicate public registration returned HTTP 409 and `"Email already exists"`. | `Pending` — public registration now returns the same generic `202` response for new and existing addresses, including database uniqueness races. Automated response-equivalence checks and local retest passed; complete requirement-specific review, including timing considerations, remains. |
 | AUTH-09 | V6.4.3 | Users can request password recovery through a generic-response endpoint; reset tokens go only to the verified email address and users choose their own new password. | `Pending` — hashed single-use tokens, expiry, password policy enforcement, and session revocation are implemented. Local recovery succeeded with a new password; the previously invalidated password was rejected without consuming the recovery link. Requirement-specific recovery review remains. |
@@ -343,7 +397,7 @@ Only `Pass` can indicate a verified requirement; none is claimed here.
 ## Remaining work
 
 These dispositions cover only the 21 requirements identified during the
-initial V6/V7 review. The current matrix has 5 `Fail`, 16 `Pending`, and 324
+initial V6/V7 review. The current matrix has 4 `Fail`, 17 `Pending`, and 324
 `Not assessed`; no requirement is `Pass`. Other V6/V7 requirements and every
 other ASVS chapter still require assessment. Deployed rate limits, notification
 delivery, operational controls, performance, and customer/production evidence
@@ -365,7 +419,7 @@ Recommended next steps are:
    license, freshness, coverage, and production deployment evidence.
 4. Address the confirmed gaps: context-specific password words, production
    verification and enforcement of phishing-resistant MFA, sensitive-operation
-   step-up, and suspicious-authentication detection. Locally retest generic
+   step-up. Locally test suspicious-authentication detection and generic
    registration responses, user-initiated recovery, emergency randomization,
    support authorization, and recovery after SMTP failure.
 5. Continue requirement-by-requirement V6/V7 review, then assess all remaining

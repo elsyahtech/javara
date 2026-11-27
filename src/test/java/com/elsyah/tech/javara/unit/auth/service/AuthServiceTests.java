@@ -43,6 +43,7 @@ import com.elsyah.tech.javara.service.auth.AuthService;
 import com.elsyah.tech.javara.service.auth.AuthServiceResult;
 import com.elsyah.tech.javara.service.auth.MfaService;
 import com.elsyah.tech.javara.service.auth.MfaLoginCompletion;
+import com.elsyah.tech.javara.service.auth.SuspiciousAuthenticationService;
 import com.elsyah.tech.javara.service.common.ServiceResult;
 import com.elsyah.tech.javara.service.email.EmailNotificationService;
 import com.elsyah.tech.javara.response.auth.MfaChallengeResponse;
@@ -342,6 +343,66 @@ class AuthServiceTests {
         verify(refreshRepository, never()).save(any());
     }
 
+    @Test
+    void loginRecordsFailureForActiveVerifiedAccount() {
+        UserService userService = mock(UserService.class);
+        UserRepository userRepository = mock(UserRepository.class);
+        RefreshTokenRepository refreshRepository = mock(RefreshTokenRepository.class);
+        AccessTokenService accessTokenService = mock(AccessTokenService.class);
+        SuspiciousAuthenticationService suspiciousAuthenticationService =
+                mock(SuspiciousAuthenticationService.class);
+        AuthService service = service(
+                userService,
+                userRepository,
+                refreshRepository,
+                accessTokenService,
+                mfaService(),
+                suspiciousAuthenticationService);
+        LoginRequest request = new LoginRequest("user@example.com", "wrong-password");
+        UserEntity user = user(uuid("user-1"));
+        when(userService.login(request)).thenReturn(new ServiceResult<>(
+                null, HttpStatus.UNAUTHORIZED, "Invalid email or password"));
+        when(userRepository.findByEmailForUpdate(request.email()))
+                .thenReturn(Optional.of(user));
+
+        AuthServiceResult result = service.login(request);
+
+        assertEquals(HttpStatus.UNAUTHORIZED, result.status());
+        verify(suspiciousAuthenticationService).recordFailedPassword(user);
+        verify(refreshRepository, never()).save(any());
+    }
+
+    @Test
+    void activeAccountLockPreventsMfaChallengeAndTokenIssuance() {
+        UserService userService = mock(UserService.class);
+        UserRepository userRepository = mock(UserRepository.class);
+        RefreshTokenRepository refreshRepository = mock(RefreshTokenRepository.class);
+        AccessTokenService accessTokenService = mock(AccessTokenService.class);
+        MfaService mfaService = mfaService();
+        SuspiciousAuthenticationService suspiciousAuthenticationService =
+                mock(SuspiciousAuthenticationService.class);
+        AuthService service = service(
+                userService,
+                userRepository,
+                refreshRepository,
+                accessTokenService,
+                mfaService,
+                suspiciousAuthenticationService);
+        UserEntity user = user(uuid("user-1"));
+        LoginRequest request = new LoginRequest("user@example.com", "password123");
+        when(userService.login(request)).thenReturn(
+                new ServiceResult<>(user, HttpStatus.OK, "Login successful"));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+        when(suspiciousAuthenticationService.isLocked(user)).thenReturn(true);
+
+        AuthServiceResult result = service.login(request);
+
+        assertEquals(HttpStatus.UNAUTHORIZED, result.status());
+        verify(mfaService, never()).beginLogin(any(UserEntity.class), any());
+        verify(refreshRepository, never()).save(any());
+        verifyNoInteractions(accessTokenService);
+    }
+
     private static AuthService service(
             UserService userService,
             UserRepository userRepository,
@@ -356,6 +417,28 @@ class AuthServiceTests {
             RefreshTokenRepository refreshRepository,
             AccessTokenService accessTokenService,
             MfaService mfaService) {
+        SuspiciousAuthenticationService suspiciousAuthenticationService =
+                mock(SuspiciousAuthenticationService.class);
+        return service(
+                userService,
+                userRepository,
+                refreshRepository,
+                accessTokenService,
+                mfaService,
+                suspiciousAuthenticationService);
+    }
+
+    private static AuthService service(
+            UserService userService,
+            UserRepository userRepository,
+            RefreshTokenRepository refreshRepository,
+            AccessTokenService accessTokenService,
+            MfaService mfaService,
+            SuspiciousAuthenticationService suspiciousAuthenticationService) {
+        when(suspiciousAuthenticationService.recordSuccessfulSource(
+                        any(UserEntity.class),
+                        org.mockito.ArgumentMatchers.isNull()))
+                .thenReturn(true);
         return new AuthService(
                 userService,
                 userRepository,
@@ -373,6 +456,7 @@ class AuthServiceTests {
                 new SessionProperties(null, null, null),
                 mock(EmailNotificationService.class),
                 mfaService,
+                suspiciousAuthenticationService,
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 

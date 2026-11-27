@@ -287,14 +287,29 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<AuthTokenResponse>> login(
-            @Valid @RequestBody LoginRequest request) {
+            @Valid @RequestBody LoginRequest request,
+            HttpServletRequest servletRequest) {
+        AuthServiceResult result = authService.login(request, servletRequest.getRemoteAddr());
+        return authenticationResponse(result, "Login successful");
+    }
+
+    public ResponseEntity<ApiResponse<AuthTokenResponse>> login(LoginRequest request) {
         AuthServiceResult result = authService.login(request);
         return authenticationResponse(result, "Login successful");
     }
 
     @PostMapping("/mfa/login/otp/verify")
     public ResponseEntity<ApiResponse<AuthTokenResponse>> verifyMfaOtpLogin(
-            @Valid @RequestBody MfaLoginOtpVerificationRequest request) {
+            @Valid @RequestBody MfaLoginOtpVerificationRequest request,
+            HttpServletRequest servletRequest) {
+        return authenticationResponse(
+                authService.verifyMfaOtpLogin(
+                        request.challengeId(), request.code(), servletRequest.getRemoteAddr()),
+                "Login successful");
+    }
+
+    public ResponseEntity<ApiResponse<AuthTokenResponse>> verifyMfaOtpLogin(
+            MfaLoginOtpVerificationRequest request) {
         return authenticationResponse(
                 authService.verifyMfaOtpLogin(request.challengeId(), request.code()),
                 "Login successful");
@@ -302,7 +317,17 @@ public class AuthController {
 
     @PostMapping("/mfa/login/passkey/verify")
     public ResponseEntity<ApiResponse<AuthTokenResponse>> verifyMfaPasskeyLogin(
-            @Valid @RequestBody MfaLoginPasskeyVerificationRequest request) {
+            @Valid @RequestBody MfaLoginPasskeyVerificationRequest request,
+            HttpServletRequest servletRequest) {
+        return authenticationResponse(
+                authService.verifyMfaPasskeyLogin(
+                        request.challengeId(), request.credential(),
+                        servletRequest.getRemoteAddr()),
+                "Login successful");
+    }
+
+    public ResponseEntity<ApiResponse<AuthTokenResponse>> verifyMfaPasskeyLogin(
+            MfaLoginPasskeyVerificationRequest request) {
         return authenticationResponse(
                 authService.verifyMfaPasskeyLogin(
                         request.challengeId(), request.credential()),
@@ -311,7 +336,17 @@ public class AuthController {
 
     @PostMapping("/mfa/login/passkey/enroll")
     public ResponseEntity<ApiResponse<AuthTokenResponse>> completeRequiredPasskeyEnrollment(
-            @Valid @RequestBody MfaPasskeyRegistrationRequest request) {
+            @Valid @RequestBody MfaPasskeyRegistrationRequest request,
+            HttpServletRequest servletRequest) {
+        return authenticationResponse(
+                authService.completeRequiredPasskeyEnrollment(
+                        request.challengeId(), request.label(), request.credential(),
+                        servletRequest.getRemoteAddr()),
+                "Login successful");
+    }
+
+    public ResponseEntity<ApiResponse<AuthTokenResponse>> completeRequiredPasskeyEnrollment(
+            MfaPasskeyRegistrationRequest request) {
         return authenticationResponse(
                 authService.completeRequiredPasskeyEnrollment(
                         request.challengeId(), request.label(), request.credential()),

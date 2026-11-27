@@ -18,6 +18,7 @@ import com.elsyah.tech.javara.entity.user.UserEntity;
 import com.elsyah.tech.javara.projection.user.UserSelectColumn;
 import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
 import com.elsyah.tech.javara.repository.user.UserRepository;
+import com.elsyah.tech.javara.service.auth.SuspiciousAuthenticationService;
 import com.elsyah.tech.javara.service.email.EmailNotificationService;
 import com.elsyah.tech.javara.service.email.EmailVerificationService;
 import com.elsyah.tech.javara.request.user.UserRequest;
@@ -50,6 +51,7 @@ public class UserService {
     private final PasswordPolicyService passwordPolicyService;
     private final EmailNotificationService emailNotificationService;
     private final EmailVerificationService emailVerificationService;
+    private final SuspiciousAuthenticationService suspiciousAuthenticationService;
     private final Clock clock;
 
     /**
@@ -64,6 +66,7 @@ public class UserService {
             PasswordPolicyService passwordPolicyService,
             EmailNotificationService emailNotificationService,
             EmailVerificationService emailVerificationService,
+            SuspiciousAuthenticationService suspiciousAuthenticationService,
             Clock clock) {
         this.repository = repository;
         this.passwordHashService = passwordHashService;
@@ -71,6 +74,7 @@ public class UserService {
         this.passwordPolicyService = passwordPolicyService;
         this.emailNotificationService = emailNotificationService;
         this.emailVerificationService = emailVerificationService;
+        this.suspiciousAuthenticationService = suspiciousAuthenticationService;
         this.clock = clock;
     }
 
@@ -345,6 +349,7 @@ public class UserService {
         repository.saveAndFlush(user);
         refreshTokenRepository.revokeActiveTokensForUser(userId, now);
         emailNotificationService.passwordChanged(user.getEmail());
+        suspiciousAuthenticationService.securityChange(user, "password was changed");
         return new ServiceResult<>(null, HttpStatus.OK, "Password changed successfully");
     }
 

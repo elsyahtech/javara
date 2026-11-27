@@ -62,6 +62,24 @@ public class UserEntity {
     @Column(name = "password_reset_support_required", nullable = false)
     private boolean passwordResetSupportRequired;
 
+    @Column(name = "failed_login_attempts", nullable = false)
+    private int failedLoginAttempts;
+
+    @Column(name = "login_failure_window_started_at")
+    private Instant loginFailureWindowStartedAt;
+
+    @Column(name = "failed_mfa_attempts", nullable = false)
+    private int failedMfaAttempts;
+
+    @Column(name = "mfa_failure_window_started_at")
+    private Instant mfaFailureWindowStartedAt;
+
+    @Column(name = "account_locked_until")
+    private Instant accountLockedUntil;
+
+    @Column(name = "last_successful_source_hash", length = 64)
+    private String lastSuccessfulSourceHash;
+
     @ElementCollection
     @CollectionTable(
             name = "user_compromised_password_hashes",
@@ -120,6 +138,36 @@ public class UserEntity {
     public boolean isPasswordResetSupportRequired() { return passwordResetSupportRequired; }
     public void setPasswordResetSupportRequired(boolean passwordResetSupportRequired) {
         this.passwordResetSupportRequired = passwordResetSupportRequired;
+    }
+
+    public int getFailedLoginAttempts() { return failedLoginAttempts; }
+    public void setFailedLoginAttempts(int failedLoginAttempts) {
+        this.failedLoginAttempts = failedLoginAttempts;
+    }
+
+    public Instant getLoginFailureWindowStartedAt() { return loginFailureWindowStartedAt; }
+    public void setLoginFailureWindowStartedAt(Instant loginFailureWindowStartedAt) {
+        this.loginFailureWindowStartedAt = loginFailureWindowStartedAt;
+    }
+
+    public int getFailedMfaAttempts() { return failedMfaAttempts; }
+    public void setFailedMfaAttempts(int failedMfaAttempts) {
+        this.failedMfaAttempts = failedMfaAttempts;
+    }
+
+    public Instant getMfaFailureWindowStartedAt() { return mfaFailureWindowStartedAt; }
+    public void setMfaFailureWindowStartedAt(Instant mfaFailureWindowStartedAt) {
+        this.mfaFailureWindowStartedAt = mfaFailureWindowStartedAt;
+    }
+
+    public Instant getAccountLockedUntil() { return accountLockedUntil; }
+    public void setAccountLockedUntil(Instant accountLockedUntil) {
+        this.accountLockedUntil = accountLockedUntil;
+    }
+
+    public String getLastSuccessfulSourceHash() { return lastSuccessfulSourceHash; }
+    public void setLastSuccessfulSourceHash(String lastSuccessfulSourceHash) {
+        this.lastSuccessfulSourceHash = lastSuccessfulSourceHash;
     }
 
     public List<String> getCompromisedPasswordHashes() { return compromisedPasswordHashes; }
