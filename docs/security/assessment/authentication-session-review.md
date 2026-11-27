@@ -64,9 +64,11 @@ restart the application, and restore the desired configuration afterward:
    account can sign in after the lock expires.
 3. Perform a password change and an MFA enrollment/preference change, then
    confirm the configured security-change notification behavior.
-4. To check source-change detection, authenticate successfully from a second
-   network address. Do not spoof forwarded headers; configure and trust a real
-   reverse proxy before testing proxy-provided client addresses.
+4. Verify source-change decision logic with a service unit test: a first source
+   and repeated sign-ins from that source should not notify; a different source
+   should notify once. Verify actual client-address extraction from different
+   networks in staging after configuring a trusted reverse proxy. Do not spoof
+   forwarded headers.
 
 Record only outcomes and status codes, not passwords, OTPs, tokens, or raw
 network addresses. Keep AUTH-06 `Pending` until these local checks and the
@@ -91,8 +93,16 @@ The user then tried the correct password while the account was locked; the
 login still returned `401` with the same generic
 `"Invalid email or password"` response. After waiting 15 minutes, login
 succeeded with `200` and access/refresh tokens, confirming sign-in recovery
-after the temporary lock. The new-source and security-change notification
-paths have not yet been verified, so AUTH-06 remains `Pending`.
+after the temporary lock.
+
+A local service unit test passed as part of the 8-test
+`SuspiciousAuthenticationServiceTests` class. It supplied synthetic source
+values in the sequence A, A, B and verified no email-service interaction for
+the repeated source and exactly one notification for the changed source. This
+verifies decision logic, not HTTP client-address extraction, proxy behavior, or
+actual email delivery. Security-change notifications still need local
+verification; real source-address and trusted-proxy behavior should be checked
+in staging. AUTH-06 remains `Pending`.
 
 Local manual API checks on 2026-11-26, using the local setup and Gmail SMTP,
 observed:
@@ -385,7 +395,7 @@ Only `Pass` can indicate a verified requirement; none is claimed here.
 |---|---|---|---|
 | SES-01 | V7.1.1 | The baseline did not document inactivity and absolute session lifetimes or the associated risk rationale. | `Pending` — local refresh was rejected after more than 15 minutes of inactivity, and an automated test covers expiry beyond the 12-hour absolute lifetime. Risk rationale and complete requirement-specific timeout/re-authentication assessment remain outstanding. |
 | SES-02 | V7.1.2 | The baseline did not document or enforce a concurrent-session limit. | `Pending` — local testing confirmed the configured cap rejects an additional login with `409` and allows another login after a slot is freed. Requirement-specific edge cases and risk rationale remain outstanding. |
-| SES-03 | V7.3.2 | The baseline refresh flow could extend sessions without preserving an absolute start time. | `Pending` — session start and absolute expiry are preserved across refresh; repeated-refresh and expiry-boundary evidence needs requirement-specific review. |
+| SES-03 | V7.3.2 | The baseline refresh flow could extend sessions without preserving an absolute start time. | `Pending` — `AuthServiceTests.repeatedRefreshesPreserveAbsoluteExpiryAndRejectAtBoundary` verifies six refresh rotations near the end of a 12-hour session preserve the same absolute expiry, then rejects and revokes the session at the exact expiry boundary. Requirement-specific review remains. |
 | SES-04 | V7.4.1 | The baseline revoked refresh tokens but left already-issued access JWTs usable until expiry. | `Pending` — local two-session logout, targeted termination, and all-session termination confirmed revoked access tokens receive `401`. Other revocation causes and the full requirement still need verification. |
 | SES-05 | V7.4.2 | The baseline did not revoke all access/session state on user disablement or deletion. | `Pending` — local user deletion invalidated a pre-existing access token (`401`); the user also confirmed a pre-disablement token was rejected after account deactivation, though the status was not restated. Full requirement-specific verification remains outstanding. |
 | SES-06 | V7.4.3 | The baseline password-change flow did not end already-issued access-token sessions. | `Pending` — local tests confirmed password change invalidates the changed user's session, including two sessions belonging to the same USER; an unrelated ADMIN session remained active. Full requirement-specific review remains outstanding. |
@@ -405,12 +415,12 @@ need separate requirement-specific verification.
 
 Recommended next steps are:
 
-1. Retest the remaining session controls, including the absolute-expiry
-   boundary across repeated refresh. Current-session
-   logout, targeted termination, all-session termination, concurrent-session
-   cap behavior, idle refresh rejection, deletion revocation, and token
-   rejection after account disablement were verified locally or with focused
-   automated tests.
+1. Complete requirement-specific review of the session controls and record the
+   timeout and re-authentication risk rationale. Current-session logout,
+   targeted termination, all-session termination, concurrent-session cap
+   behavior, idle refresh rejection, deletion revocation, token rejection after
+   account disablement, and the repeated-refresh absolute-expiry boundary were
+   verified locally or with focused automated tests.
 2. Assess whether durable outbox/retry is required before relying on notices,
    and gather SMTP delivery/alerting evidence in staging. Local SMTP failure
    logging and delivery of verification, email-change, new-session, and

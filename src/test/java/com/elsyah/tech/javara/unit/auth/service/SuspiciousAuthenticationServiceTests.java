@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Clock;
@@ -191,6 +192,30 @@ class SuspiciousAuthenticationServiceTests {
                 Duration.ofDays(2),
                 Duration.ofMinutes(15),
                 Action.NOTIFY));
+    }
+
+    @Test
+    void sameSourceDoesNotNotifyButChangedSourceDoes() {
+        EmailNotificationService emailService = mock(EmailNotificationService.class);
+        UserEntity user = user();
+        SuspiciousAuthenticationService service = service(
+                mock(UserRepository.class),
+                emailService,
+                properties(null, event(Action.NOTIFY)));
+
+        boolean accepted1 = service.recordSuccessfulSource(user, "198.51.100.10");
+        boolean accepted2 = service.recordSuccessfulSource(user, "198.51.100.10");
+
+        assertTrue(accepted1);
+        assertTrue(accepted2);
+        verifyNoInteractions(emailService);
+
+        boolean accepted3 = service.recordSuccessfulSource(user, "198.51.100.11");
+        assertTrue(accepted3);
+
+        verify(emailService, times(1)).suspiciousAuthentication(
+                "user@example.com",
+                "A successful sign-in was detected from a new network address.");
     }
 
     private static SuspiciousAuthenticationProperties properties(

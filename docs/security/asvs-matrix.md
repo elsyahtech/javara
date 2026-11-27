@@ -263,7 +263,7 @@ It is not endorsed by OWASP.
 | `v5.0.0-V6.3.2` | L1 | Pending | Not assessed |  |  |
 | `v5.0.0-V6.3.3` | L2 | In scope | Fail | [AUTH-05](assessment/authentication-session-review.md#auth-05) | Local Email OTP enrollment/login and session revocation manually verified; verify production WebAuthn policy, authenticators, and phishing resistance. |
 | `v5.0.0-V6.3.4` | L2 | Pending | Not assessed |  |  |
-| `v5.0.0-V6.3.5` | L3 | In scope | Pending | [AUTH-06](assessment/authentication-session-review.md#auth-06) | Local retest confirms generic failures, lock-alert emails, rejection during an active lock, and successful sign-in after 15 minutes; source-change/security-change paths and requirement review remain. |
+| `v5.0.0-V6.3.5` | L3 | In scope | Pending | [AUTH-06](assessment/authentication-session-review.md#auth-06) | Local retest confirms generic failures, lock-alert emails, rejection during an active lock, and recovery after 15 minutes. A local unit test verifies A-A-B source-change decision logic; security-change notifications, staging client-address/proxy behavior, and requirement review remain. |
 | `v5.0.0-V6.3.6` | L3 | Pending | Not assessed |  |  |
 | `v5.0.0-V6.3.7` | L3 | In scope | Pending | [AUTH-07](assessment/authentication-session-review.md#auth-07) | Email notifications implemented; verify all event delivery and failure/retry handling. |
 | `v5.0.0-V6.3.8` | L3 | In scope | Pending | [AUTH-08](assessment/authentication-session-review.md#auth-08) | Registration returns the same generic response for new and existing addresses; automated checks and local retest pass. Complete requirement review, including timing considerations, remains. |
@@ -303,7 +303,7 @@ It is not endorsed by OWASP.
 | `v5.0.0-V7.2.3` | L1 | Pending | Not assessed |  |  |
 | `v5.0.0-V7.2.4` | L1 | Pending | Not assessed |  |  |
 | `v5.0.0-V7.3.1` | L2 | Pending | Not assessed |  |  |
-| `v5.0.0-V7.3.2` | L2 | In scope | Pending | [SES-03](assessment/authentication-session-review.md#ses-03) | Absolute session expiry preserved across refresh; boundary/repeated-refresh retest remains. |
+| `v5.0.0-V7.3.2` | L2 | In scope | Pending | [SES-03](assessment/authentication-session-review.md#ses-03) | Automated test verifies six refresh rotations preserve the 12-hour absolute expiry and exact-boundary refresh is rejected; requirement-specific review remains. |
 | `v5.0.0-V7.4.1` | L1 | In scope | Pending | [SES-04](assessment/authentication-session-review.md#ses-04) | Session-bound access-token validation implemented; complete revocation retest remains. |
 | `v5.0.0-V7.4.2` | L1 | In scope | Pending | [SES-05](assessment/authentication-session-review.md#ses-05) | Local disable/delete token-revocation checks exercised; full requirement review remains. |
 | `v5.0.0-V7.4.3` | L2 | In scope | Pending | [SES-06](assessment/authentication-session-review.md#ses-06) | Local same-user multi-session password-change revocation exercised; complete requirement review remains. |

@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -20,6 +21,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
@@ -223,6 +225,86 @@ class AuthServiceTests {
         assertEquals(oldToken.getSessionId(), tokenCaptor.getValue().getSessionId());
         assertEquals(oldToken.getSessionExpiresAt(), tokenCaptor.getValue().getSessionExpiresAt());
         assertEquals("pwd,otp", tokenCaptor.getValue().getAuthenticationMethods());
+    }
+
+    @Test
+    void repeatedRefreshesPreserveAbsoluteExpiryAndRejectAtBoundary() {
+        UserService userService = mock(UserService.class);
+        UserRepository userRepository = mock(UserRepository.class);
+        RefreshTokenRepository refreshRepository = mock(RefreshTokenRepository.class);
+        AccessTokenService accessTokenService = mock(AccessTokenService.class);
+        UUID userId = uuid("user-1");
+        UUID sessionId = uuid("session-repeated-refresh");
+        Instant sessionStartedAt = NOW.minus(Duration.ofHours(11));
+        Instant sessionExpiresAt = NOW.plus(Duration.ofHours(1));
+        UserEntity user = user(userId);
+        List<RefreshTokenEntity> rotatedTokens = new ArrayList<>();
+        when(userRepository.findByIdForUpdate(userId)).thenReturn(Optional.of(user));
+        when(refreshRepository.save(any(RefreshTokenEntity.class))).thenAnswer(invocation -> {
+            RefreshTokenEntity savedToken = invocation.getArgument(0);
+            rotatedTokens.add(savedToken);
+            return savedToken;
+        });
+
+        String rawToken = "initial-refresh-token";
+        RefreshTokenEntity currentToken = storedToken(userId, rawToken);
+        currentToken.setSessionId(sessionId);
+        currentToken.setSessionStartedAt(sessionStartedAt);
+        currentToken.setSessionExpiresAt(sessionExpiresAt);
+
+        List<Instant> refreshTimes = List.of(
+                NOW,
+                NOW.plus(Duration.ofMinutes(14)),
+                NOW.plus(Duration.ofMinutes(28)),
+                NOW.plus(Duration.ofMinutes(42)),
+                NOW.plus(Duration.ofMinutes(56)),
+                NOW.plus(Duration.ofMinutes(59)));
+        for (int i = 0; i < refreshTimes.size(); i++) {
+            Instant refreshTime = refreshTimes.get(i);
+            when(refreshRepository.findUserIdByTokenHash(hash(rawToken)))
+                    .thenReturn(Optional.of(userId));
+            when(refreshRepository.findByTokenHashForUpdate(hash(rawToken)))
+                    .thenReturn(Optional.of(currentToken));
+
+            AuthServiceResult result = service(
+                            userService,
+                            userRepository,
+                            refreshRepository,
+                            accessTokenService,
+                            mfaService(),
+                            mock(SuspiciousAuthenticationService.class),
+                            Clock.fixed(refreshTime, ZoneOffset.UTC))
+                    .refresh(rawToken);
+
+            assertEquals(HttpStatus.OK, result.status());
+            RefreshTokenEntity rotatedToken = rotatedTokens.get(i);
+            assertEquals(sessionId, rotatedToken.getSessionId());
+            assertEquals(sessionStartedAt, rotatedToken.getSessionStartedAt());
+            assertEquals(sessionExpiresAt, rotatedToken.getSessionExpiresAt());
+            assertEquals(sessionExpiresAt, rotatedToken.getExpiresAt());
+            currentToken = rotatedToken;
+            rawToken = result.refreshToken();
+        }
+
+        when(refreshRepository.findUserIdByTokenHash(hash(rawToken)))
+                .thenReturn(Optional.of(userId));
+        when(refreshRepository.findByTokenHashForUpdate(hash(rawToken)))
+                .thenReturn(Optional.of(currentToken));
+        AuthServiceResult atAbsoluteExpiry = service(
+                        userService,
+                        userRepository,
+                        refreshRepository,
+                        accessTokenService,
+                        mfaService(),
+                        mock(SuspiciousAuthenticationService.class),
+                        Clock.fixed(sessionExpiresAt, ZoneOffset.UTC))
+                .refresh(rawToken);
+
+        assertEquals(HttpStatus.UNAUTHORIZED, atAbsoluteExpiry.status());
+        verify(refreshRepository, times(refreshTimes.size()))
+                .save(any(RefreshTokenEntity.class));
+        verify(refreshRepository).revokeActiveTokensForSession(
+                sessionId, userId, sessionExpiresAt);
     }
 
     @Test
@@ -435,6 +517,24 @@ class AuthServiceTests {
             AccessTokenService accessTokenService,
             MfaService mfaService,
             SuspiciousAuthenticationService suspiciousAuthenticationService) {
+        return service(
+                userService,
+                userRepository,
+                refreshRepository,
+                accessTokenService,
+                mfaService,
+                suspiciousAuthenticationService,
+                Clock.fixed(NOW, ZoneOffset.UTC));
+    }
+
+    private static AuthService service(
+            UserService userService,
+            UserRepository userRepository,
+            RefreshTokenRepository refreshRepository,
+            AccessTokenService accessTokenService,
+            MfaService mfaService,
+            SuspiciousAuthenticationService suspiciousAuthenticationService,
+            Clock clock) {
         when(suspiciousAuthenticationService.recordSuccessfulSource(
                         any(UserEntity.class),
                         org.mockito.ArgumentMatchers.isNull()))
@@ -457,7 +557,7 @@ class AuthServiceTests {
                 mock(EmailNotificationService.class),
                 mfaService,
                 suspiciousAuthenticationService,
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                clock);
     }
 
     private static MfaService mfaService() {
