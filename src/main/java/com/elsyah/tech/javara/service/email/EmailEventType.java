@@ -8,5 +8,6 @@ public enum EmailEventType {
     EMERGENCY_PASSWORD_RESET,
     PASSWORD_CHANGED,
     EMAIL_CHANGED,
-    NEW_SESSION
+    NEW_SESSION,
+    MFA_ONE_TIME_CODE
 }

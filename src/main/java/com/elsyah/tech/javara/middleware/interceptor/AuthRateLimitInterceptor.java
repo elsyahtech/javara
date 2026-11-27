@@ -16,6 +16,12 @@ import com.elsyah.tech.javara.middleware.ratelimit.SessionReauthRateLimitPropert
 @Component
 public class AuthRateLimitInterceptor implements HandlerInterceptor {
     private static final String LOGIN_PATH = "/api/v1/auth/login";
+    private static final String MFA_LOGIN_OTP_PATH =
+            "/api/v1/auth/mfa/login/otp/verify";
+    private static final String MFA_LOGIN_PASSKEY_PATH =
+            "/api/v1/auth/mfa/login/passkey/verify";
+    private static final String MFA_LOGIN_PASSKEY_ENROLL_PATH =
+            "/api/v1/auth/mfa/login/passkey/enroll";
     private static final String REGISTER_PATH = "/api/v1/auth/register";
     private static final String EMAIL_VERIFICATION_RESEND_PATH =
             "/api/v1/auth/email/verification/resend";
@@ -23,6 +29,7 @@ public class AuthRateLimitInterceptor implements HandlerInterceptor {
     private static final String EMAIL_CHANGE_PATH = "/api/v1/auth/email/change";
     private static final String REFRESH_PATH = "/api/v1/auth/refresh";
     private static final String PASSWORD_CHANGE_PATH = "/api/v1/auth/password/change";
+    private static final String MFA_MANAGEMENT_PATH_PREFIX = "/api/v1/auth/mfa/";
     private static final String PASSWORD_RESET_PATH = "/api/v1/auth/password/reset";
     private static final String PASSWORD_RESET_REQUEST_PATH =
             "/api/v1/auth/password/reset/request";
@@ -68,13 +75,15 @@ public class AuthRateLimitInterceptor implements HandlerInterceptor {
 
     private RateLimitSettings settingsFor(String path) {
         return switch (path) {
-            case LOGIN_PATH -> loginProperties;
+            case LOGIN_PATH, MFA_LOGIN_OTP_PATH, MFA_LOGIN_PASSKEY_PATH,
+                    MFA_LOGIN_PASSKEY_ENROLL_PATH -> loginProperties;
             case REGISTER_PATH, EMAIL_VERIFICATION_RESEND_PATH, EMAIL_VERIFICATION_PATH ->
                     registerProperties;
             case PASSWORD_RESET_PATH, PASSWORD_RESET_REQUEST_PATH -> sessionReauthProperties;
             case REFRESH_PATH -> refreshProperties;
             case PASSWORD_CHANGE_PATH, EMAIL_CHANGE_PATH -> sessionReauthProperties;
             default -> isSessionReauthenticationPath(path)
+                    || path.startsWith(MFA_MANAGEMENT_PATH_PREFIX)
                     ? sessionReauthProperties
                     : null;
         };

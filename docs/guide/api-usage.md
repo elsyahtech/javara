@@ -5,19 +5,25 @@ availability response; it is not a full health or readiness check.
 
 ## Authentication
 
-In `BEARER` mode, sign in at `POST /api/v1/auth/login`. The response contains
-`data.accessToken` and `data.refreshToken`. Send the access token on protected
+In `BEARER` mode, sign in at `POST /api/v1/auth/login`. If MFA is not required
+for the account, the response contains `data.accessToken` and
+`data.refreshToken`. When MFA is enabled for the account, login instead returns
+`202 Accepted` with `data.mfaChallenge`; no token or cookie is issued until
+the challenge is completed. Send the resulting access token on protected
 requests:
 
 ```http
 Authorization: Bearer <access-token>
 ```
 
-Registration creates an active `USER`, never an ADMIN. New public registrations
-must verify their email before they can sign in; the initial ADMIN and accounts
-that existed before the email-verification migration remain verified. The
-initial ADMIN is created from bootstrap configuration. Do not expose bootstrap
-credentials to clients.
+Public registration creates an active `USER`, never an ADMIN. It returns the
+same generic `202 Accepted` response whether the address is new or already
+registered; the response does not return a user record or disclose account
+existence. For a new address, verification instructions are sent by email.
+New public registrations must verify their email before they can sign in; the
+initial ADMIN and accounts that existed before the email-verification migration
+remain verified. The initial ADMIN is created from bootstrap configuration. Do
+not expose bootstrap credentials to clients.
 
 Refresh rotates the refresh token. Keep the newest token and discard the old
 one. User access tokens are bound to a backend-validated session. Logout,
@@ -49,7 +55,7 @@ For browser cookies and CSRF, see the
 | Method and path | Access | Notes |
 |---|---|---|
 | `GET /` | Public | Simple welcome response |
-| `POST /api/v1/auth/register` | Public | Creates an active, unverified USER and sends a verification email |
+| `POST /api/v1/auth/register` | Public | Creates an active, unverified USER when eligible; always returns the same generic `202` response to avoid account enumeration |
 | `GET /api/v1/auth/email/verify?token=...` | Public | Displays a confirmation form; does not consume the token |
 | `POST /api/v1/auth/email/verify` | Public | Consumes a single-use verification token |
 | `POST /api/v1/auth/email/verification/resend` | Public | Requests another registration verification email |
@@ -60,7 +66,17 @@ For browser cookies and CSRF, see the
 | `POST /api/v1/admin/users/{userId}/email/change` | ADMIN | Requires the administrator's current password and confirmation of the new address |
 | `POST /api/v1/admin/users/{userId}/security/force-password-reset` | ADMIN | Emergency action: replaces the password with an undisclosed random secret, revokes sessions, locks sign-in, and emails an admin-authored notice |
 | `POST /api/v1/admin/users/{userId}/password/recovery/authorize` | ADMIN | After out-of-band support verification, sends a one-time link for the user to choose a password |
-| `POST /api/v1/auth/login` | Public | Returns tokens or sets cookies; unverified accounts receive the generic invalid-credentials response |
+| `POST /api/v1/auth/login` | Public | Returns tokens or an MFA challenge; unverified accounts receive the generic invalid-credentials response |
+| `POST /api/v1/auth/mfa/login/otp/verify` | Public MFA challenge | Verifies a one-time code from a configured provider; issues tokens only after successful verification |
+| `POST /api/v1/auth/mfa/login/passkey/verify` | Public MFA challenge | Verifies a WebAuthn assertion; issues tokens only after successful verification |
+| `POST /api/v1/auth/mfa/login/passkey/enroll` | Public required-enrollment challenge | Completes required passkey enrollment before issuing tokens |
+| `GET /api/v1/auth/mfa` | USER or ADMIN | Returns deployment policy, enrolled methods, and preferred method |
+| `POST /api/v1/auth/mfa/email/enroll` | USER or ADMIN | Requires the current password and sends an email OTP |
+| `POST /api/v1/auth/mfa/email/enroll/verify` | USER or ADMIN | Verifies the enrollment OTP; enabling the factor revokes active sessions |
+| `POST /api/v1/auth/mfa/passkeys/enroll/options` | USER or ADMIN | Requires the current password and returns WebAuthn creation options |
+| `POST /api/v1/auth/mfa/passkeys/enroll` | USER or ADMIN | Completes passkey enrollment; enabling the factor revokes active sessions |
+| `POST /api/v1/auth/mfa/preference` | USER or ADMIN | Selects an enrolled, deployment-allowed preferred factor; requires current password |
+| `POST /api/v1/auth/mfa/disable` | USER or ADMIN | Disables an enrolled factor; requires current password |
 | `POST /api/v1/auth/refresh` | Public | Rotates a refresh token |
 | `POST /api/v1/auth/logout` | Current refresh token | Revokes that session; cookie mode also requires a CSRF token |
 | `POST /api/v1/auth/password/change` | USER or ADMIN | Requires current password; revokes all sessions and requires signing in again |
@@ -79,6 +95,64 @@ For browser cookies and CSRF, see the
 “Same USER” means the authenticated account ID must match the `{id}` in the
 path. ADMIN can manage other users. List and create operations are
 ADMIN-only.
+
+### MFA login and enrollment
+
+The login JSON may include an optional `mfaMethod` (`EMAIL_OTP` or
+`WEBAUTHN`) to select an enrolled factor allowed by deployment policy:
+
+```json
+{
+  "email": "user@example.com",
+  "password": "your-password",
+  "mfaMethod": "EMAIL_OTP"
+}
+```
+
+Without that field, JAVARA uses the account's preferred factor. A challenge
+response has no access token, refresh token, or authentication cookie:
+
+```json
+{
+  "httpCode": 202,
+  "success": true,
+  "data": {
+    "mfaChallenge": {
+      "challengeId": "challenge-uuid",
+      "method": "EMAIL_OTP",
+      "availableMethods": ["EMAIL_OTP", "WEBAUTHN"],
+      "action": "VERIFY",
+      "expiresAt": "2026-11-26T16:00:00Z"
+    }
+  }
+}
+```
+
+For an OTP, submit `challengeId` and the eight-digit code to
+`POST /api/v1/auth/mfa/login/otp/verify`. For a passkey, send `challengeId`
+and the browser-generated assertion JSON to
+`POST /api/v1/auth/mfa/login/passkey/verify`. Under required policy, a new
+account first enrolls the configured default factor: complete the email code
+challenge through the email verification endpoint or submit the WebAuthn
+registration credential to `/api/v1/auth/mfa/login/passkey/enroll`. The API
+issues tokens only after verification or enrollment succeeds.
+
+An authenticated user can inspect policy and enrolled factors with
+`GET /api/v1/auth/mfa`. Email enrollment starts at
+`POST /api/v1/auth/mfa/email/enroll` with `currentPassword`, then completes at
+`POST /api/v1/auth/mfa/email/enroll/verify` with `challengeId` and `code`.
+Passkey enrollment starts at
+`POST /api/v1/auth/mfa/passkeys/enroll/options` with `currentPassword`; submit
+the returned creation options and browser-generated credential to
+`POST /api/v1/auth/mfa/passkeys/enroll`. Use `/mfa/preference` to choose an
+enrolled allowed factor and `/mfa/disable` to remove one; both require the
+current password. Enabling or changing factors revokes active sessions.
+Required policy prevents disabling the last factor.
+
+The allowed-method list is deployment-wide; there is no tenant-specific MFA
+policy. SMS and WhatsApp providers and phone-number enrollment are not
+implemented. Email OTP is not phishing-resistant, and MFA is not yet a
+step-up control for sensitive operations.
 
 ## Request and response format
 

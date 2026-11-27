@@ -1,5 +1,7 @@
 package com.elsyah.tech.javara.request.auth;
 
+import com.elsyah.tech.javara.entity.auth.MfaMethod;
+
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -12,5 +14,11 @@ public record LoginRequest(
 
         @NotBlank(message = "password is required")
         @Size(max = 1024, message = "password must be at most 1024 characters")
-        String password
-) {}
+        String password,
+
+        MfaMethod mfaMethod
+) {
+    public LoginRequest(String email, String password) {
+        this(email, password, null);
+    }
+}

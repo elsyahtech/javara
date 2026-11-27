@@ -21,6 +21,7 @@ import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 
+import com.elsyah.tech.javara.middleware.config.ApplicationIdentityProperties;
 import com.elsyah.tech.javara.middleware.ratelimit.LoginRateLimitProperties;
 import com.elsyah.tech.javara.middleware.ratelimit.RefreshRateLimitProperties;
 import com.elsyah.tech.javara.middleware.ratelimit.RedisStartupCheck;
@@ -144,6 +145,7 @@ class RedisStartupCheckTests {
                 new RegisterRateLimitProperties(
                         5, Duration.ofHours(1), "test:register", registerEnabled),
                 new RefreshRateLimitProperties(
-                        30, Duration.ofMinutes(1), "test:refresh", refreshEnabled));
+                        30, Duration.ofMinutes(1), "test:refresh", refreshEnabled),
+                new ApplicationIdentityProperties("Test Application"));
     }
 }

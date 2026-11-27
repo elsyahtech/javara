@@ -6,11 +6,15 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.net.URI;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,15 +33,22 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 
 import com.elsyah.tech.javara.entity.auth.EmailVerificationTokenEntity;
+import com.elsyah.tech.javara.entity.auth.MfaMethod;
 import com.elsyah.tech.javara.entity.auth.PasswordResetTokenEntity;
+import com.elsyah.tech.javara.entity.auth.UserMfaMethodEntity;
 import com.elsyah.tech.javara.entity.user.UserEntity;
 import com.elsyah.tech.javara.entity.user.UserRole;
 import com.elsyah.tech.javara.repository.auth.AdminPasswordResetAuditRepository;
 import com.elsyah.tech.javara.repository.auth.EmailVerificationTokenRepository;
+import com.elsyah.tech.javara.repository.auth.MfaChallengeRepository;
 import com.elsyah.tech.javara.repository.auth.PasswordResetTokenRepository;
 import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
+import com.elsyah.tech.javara.repository.auth.UserMfaMethodRepository;
+import org.springframework.security.web.webauthn.api.Bytes;
+import org.springframework.security.web.webauthn.management.PublicKeyCredentialUserEntityRepository;
 import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.service.auth.AuthService;
 import com.elsyah.tech.javara.service.auth.AuthServiceResult;
@@ -51,6 +62,8 @@ import com.elsyah.tech.javara.utils.security.PasswordHashService;
 import com.elsyah.tech.javara.request.auth.LoginRequest;
 
 @SpringBootTest(properties = {
+        "app.name=Integration Portal",
+        "app.branding.powered-by=JAVARA",
         "app.security.jwt.signing-key=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
         "app.security.jwt.transport=BEARER",
         "app.security.bootstrap-admin.enabled=false",
@@ -86,10 +99,22 @@ class EmailVerificationIntegrationTests extends PostgresRedisTestSupport {
     private AdminPasswordResetAuditRepository passwordResetAuditRepository;
 
     @Autowired
+    private MfaChallengeRepository mfaChallengeRepository;
+
+    @Autowired
+    private UserMfaMethodRepository userMfaMethodRepository;
+
+    @Autowired
+    private PublicKeyCredentialUserEntityRepository webAuthnUserRepository;
+
+    @Autowired
     private PasswordHashService passwordHashService;
 
     @Autowired
     private AuthService authService;
+
+    @Autowired
+    private JwtDecoder jwtDecoder;
 
     @Autowired
     private UserService userService;
@@ -104,28 +129,161 @@ class EmailVerificationIntegrationTests extends PostgresRedisTestSupport {
         for (UUID userId : createdUserIds) {
             passwordResetAuditRepository.deleteByActorUserId(userId);
             passwordResetAuditRepository.deleteByTargetUserId(userId);
+            mfaChallengeRepository.deleteByUserId(userId);
+            userMfaMethodRepository.deleteByUserId(userId);
+            webAuthnUserRepository.delete(webAuthnUserId(userId));
             passwordResetTokenRepository.deleteByUserId(userId);
             verificationTokenRepository.deleteByUserId(userId);
             refreshTokenRepository.deleteByUserId(userId);
             userRepository.deleteById(userId);
         }
+
         createdUserIds.clear();
         emailDelivery.clear();
     }
 
     @Test
-    void registrationRequiresOneTimeEmailVerificationBeforeLogin() throws Exception {
-        String email = "verify-" + UUID.randomUUID() + "@example.com";
-        mockMvc.perform(post("/api/v1/auth/register")
+    void emailMfaRequiresVerificationBeforeIssuingTokensAndConsumesChallenge()
+            throws Exception {
+        UserEntity target = createVerifiedUser("target-current-password-123");
+        UserMfaMethodEntity emailMfa = new UserMfaMethodEntity();
+        emailMfa.setId(UUID.randomUUID());
+        emailMfa.setUserId(target.getId());
+        emailMfa.setMethod(MfaMethod.EMAIL_OTP);
+        emailMfa.setEnabled(true);
+        emailMfa.setPreferred(true);
+        emailMfa.setCreatedAt(java.time.Instant.now());
+        emailMfa.setUpdatedAt(java.time.Instant.now());
+        userMfaMethodRepository.saveAndFlush(emailMfa);
+
+        AuthServiceResult pending = authService.login(
+                new LoginRequest(target.getEmail(), "target-current-password-123"));
+
+        assertEquals(HttpStatus.ACCEPTED, pending.status());
+        assertNull(pending.accessToken());
+        assertNull(pending.refreshToken());
+        assertNotNull(pending.mfaChallenge());
+        EmailMessageEvent codeEmail = emailDelivery.last(EmailEventType.MFA_ONE_TIME_CODE);
+        String marker = "complete sign-in or MFA setup: ";
+        int codeStart = codeEmail.body().indexOf(marker) + marker.length();
+        String code = codeEmail.body().substring(codeStart, codeStart + 8);
+        assertTrue(code.matches("[0-9]{8}"));
+
+        String incorrectCode = "00000000".equals(code) ? "00000001" : "00000000";
+        assertEquals(
+                HttpStatus.UNAUTHORIZED,
+                authService.verifyMfaOtpLogin(
+                        pending.mfaChallenge().challengeId(), incorrectCode).status());
+        mockMvc.perform(post("/api/v1/auth/mfa/login/otp/verify")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"email":"%s","password":"unique-password-123"}
-                                """.formatted(email)))
-                .andExpect(status().isCreated());
+                                {"challengeId":"%s","code":"%s"}
+                                """.formatted(
+                                        pending.mfaChallenge().challengeId(), incorrectCode)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().string(containsString(
+                        "MFA challenge is invalid, expired, or has already been used")));
+        AuthServiceResult authenticated = authService.verifyMfaOtpLogin(
+                pending.mfaChallenge().challengeId(), code);
+        assertEquals(HttpStatus.OK, authenticated.status());
+        assertNotNull(authenticated.accessToken());
+        assertNotNull(authenticated.refreshToken());
+        assertEquals(
+                List.of("pwd", "otp"),
+                jwtDecoder.decode(authenticated.accessToken()).getClaimAsStringList("amr"));
+        assertEquals(
+                "pwd,otp",
+                refreshTokenRepository.findByUserIdAndRevokedAtIsNull(target.getId())
+                        .getFirst()
+                        .getAuthenticationMethods());
+        assertEquals(
+                HttpStatus.UNAUTHORIZED,
+                authService.verifyMfaOtpLogin(
+                        pending.mfaChallenge().challengeId(), code).status());
+    }
+
+    @Test
+    void passwordChangeInvalidatesOutstandingMfaChallenge() {
+        UserEntity target = createVerifiedUser("target-current-password-123");
+        UserMfaMethodEntity emailMfa = new UserMfaMethodEntity();
+        emailMfa.setId(UUID.randomUUID());
+        emailMfa.setUserId(target.getId());
+        emailMfa.setMethod(MfaMethod.EMAIL_OTP);
+        emailMfa.setEnabled(true);
+        emailMfa.setPreferred(true);
+        emailMfa.setCreatedAt(java.time.Instant.now());
+        emailMfa.setUpdatedAt(java.time.Instant.now());
+        userMfaMethodRepository.saveAndFlush(emailMfa);
+
+        AuthServiceResult pending = authService.login(
+                new LoginRequest(target.getEmail(), "target-current-password-123"));
+        EmailMessageEvent codeEmail = emailDelivery.last(EmailEventType.MFA_ONE_TIME_CODE);
+        String marker = "complete sign-in or MFA setup: ";
+        int codeStart = codeEmail.body().indexOf(marker) + marker.length();
+        String code = codeEmail.body().substring(codeStart, codeStart + 8);
+
+        assertEquals(
+                HttpStatus.OK,
+                userService.changePassword(
+                        target.getId(),
+                        "target-current-password-123",
+                        "target-new-password-456").status());
+        assertEquals(
+                HttpStatus.UNAUTHORIZED,
+                authService.verifyMfaOtpLogin(
+                        pending.mfaChallenge().challengeId(), code).status());
+        assertTrue(refreshTokenRepository.findByUserIdAndRevokedAtIsNull(target.getId()).isEmpty());
+    }
+
+    @Test
+    void passkeyEnrollmentEndpointReturnsWebAuthnCreationOptions() throws Exception {
+        UserEntity target = createVerifiedUser("target-current-password-123");
+        AuthServiceResult login = authService.login(
+                new LoginRequest(target.getEmail(), "target-current-password-123"));
+
+        mockMvc.perform(post("/api/v1/auth/mfa/passkeys/enroll/options")
+                        .header("Authorization", "Bearer " + login.accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"currentPassword":"target-current-password-123"}
+                                """))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.method").value("WEBAUTHN"))
+                .andExpect(jsonPath("$.data.options.challenge").isNotEmpty())
+                .andExpect(jsonPath("$.data.options.rp.id").value("localhost"))
+                .andExpect(jsonPath("$.data.options.rp.name").value("Integration Portal"));
+    }
+
+    @Test
+    void registrationRequiresOneTimeEmailVerificationBeforeLogin() throws Exception {
+        String email = "verify-" + UUID.randomUUID() + "@example.com";
+        String requestBody = """
+                {"email":"%s","password":"unique-password-123"}
+                """.formatted(email);
+        String firstRegistration = mockMvc.perform(post("/api/v1/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody))
+                .andExpect(status().isAccepted())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String duplicateRegistration = mockMvc.perform(post("/api/v1/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody))
+                .andExpect(status().isAccepted())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertEquals(firstRegistration, duplicateRegistration);
 
         UserEntity user = userRepository.findByEmail(email).orElseThrow();
         createdUserIds.add(user.getId());
         assertFalse(user.isEmailVerified());
+        assertEquals(
+                1L,
+                verificationTokenRepository.findAll().stream()
+                        .filter(token -> token.getUserId().equals(user.getId()))
+                        .count());
         assertEquals(
                 HttpStatus.UNAUTHORIZED,
                 authService.login(new LoginRequest(email, "unique-password-123")).status());
@@ -436,6 +594,13 @@ class EmailVerificationIntegrationTests extends PostgresRedisTestSupport {
         return user;
     }
 
+    private static Bytes webAuthnUserId(UUID userId) {
+        ByteBuffer bytes = ByteBuffer.allocate(16)
+                .putLong(userId.getMostSignificantBits())
+                .putLong(userId.getLeastSignificantBits());
+        return new Bytes(bytes.array());
+    }
+
     private static String tokenFromBody(String body) {
         String marker = "token=";
         int tokenStart = body.indexOf(marker);
@@ -501,10 +666,10 @@ class EmailVerificationIntegrationTests extends PostgresRedisTestSupport {
         }
 
         private static EmailEventType classify(String subject) {
-            if (subject.contains("Verify your JAVARA")) {
+            if (subject.contains("Verify your Integration Portal")) {
                 return EmailEventType.REGISTRATION_VERIFICATION;
             }
-            if (subject.contains("Confirm your JAVARA")) {
+            if (subject.contains("Confirm your Integration Portal")) {
                 return EmailEventType.EMAIL_CHANGE_VERIFICATION;
             }
             if (subject.contains("security alert: password reset")) {
@@ -513,11 +678,14 @@ class EmailVerificationIntegrationTests extends PostgresRedisTestSupport {
             if (subject.contains("account recovery authorized")) {
                 return EmailEventType.PASSWORD_RESET_SUPPORT_AUTHORIZED;
             }
-            if (subject.contains("Reset your JAVARA password")) {
+            if (subject.contains("Reset your Integration Portal password")) {
                 return EmailEventType.PASSWORD_RESET_REQUESTED;
             }
             if (subject.contains("password changed")) {
                 return EmailEventType.PASSWORD_CHANGED;
+            }
+            if (subject.contains("verification code")) {
+                return EmailEventType.MFA_ONE_TIME_CODE;
             }
             if (subject.contains("email address changed")) {
                 return EmailEventType.EMAIL_CHANGED;

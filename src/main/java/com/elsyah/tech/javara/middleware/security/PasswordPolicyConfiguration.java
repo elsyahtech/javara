@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 
+import com.elsyah.tech.javara.middleware.config.ApplicationIdentityProperties;
 import com.elsyah.tech.javara.service.user.PasswordPolicyService;
 
 @Configuration
@@ -22,6 +23,7 @@ public class PasswordPolicyConfiguration {
     @Bean
     PasswordPolicyService passwordPolicyService(
             PasswordPolicyProperties properties,
+            ApplicationIdentityProperties applicationIdentity,
             Environment environment) {
         boolean productionProfile =
                 environment.acceptsProfiles(Profiles.of("prod", "production", "staging"));
@@ -40,15 +42,16 @@ public class PasswordPolicyConfiguration {
         }
         if (properties.enabled() && properties.sampleData()) {
             LOGGER.warn(
-                    "JAVARA sample password datasets are active. They demonstrate local setup "
-                            + "only and do not provide production password or breach coverage.");
+                    "{} sample password datasets are active. They demonstrate local setup only "
+                            + "and do not provide production password or breach coverage.",
+                    applicationIdentity.name());
         }
         if (!properties.enabled()) {
             LOGGER.warn(
                     "Password denylist and breached-password checks are disabled. "
                             + "This setting is only suitable for tests or isolated local development.");
         }
-        return new PasswordPolicyService(properties);
+        return new PasswordPolicyService(properties, applicationIdentity);
     }
 
     private static boolean onlyLocalDevelopmentProfilesAreActive(Environment environment) {

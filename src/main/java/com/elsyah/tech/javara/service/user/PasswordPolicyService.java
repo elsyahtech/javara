@@ -14,6 +14,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+import com.elsyah.tech.javara.middleware.config.ApplicationIdentityProperties;
 import com.elsyah.tech.javara.middleware.security.PasswordPolicyProperties;
 
 public class PasswordPolicyService {
@@ -25,8 +26,11 @@ public class PasswordPolicyService {
     private final Set<String> commonPasswords;
     private final Set<String> breachedPasswordHashes;
 
-    public PasswordPolicyService(PasswordPolicyProperties properties) {
+    public PasswordPolicyService(
+            PasswordPolicyProperties properties,
+            ApplicationIdentityProperties applicationIdentity) {
         this.enabled = properties.enabled();
+        String applicationName = applicationIdentity.name();
         boolean sampleData = properties.sampleData();
         if (!enabled) {
             commonPasswords = Set.of();
@@ -38,11 +42,13 @@ public class PasswordPolicyService {
                 configuredPath(
                         properties.commonPasswordsFile(),
                         "app.security.password-policy.common-passwords-file"),
-                sampleData);
+                sampleData,
+                applicationName);
         breachedPasswordHashes =
                 loadBreachedPasswordHashes(configuredPath(
-                        properties.breachedPasswordHashesFile(),
-                        "app.security.password-policy.breached-password-hashes-file"));
+                                properties.breachedPasswordHashesFile(),
+                                "app.security.password-policy.breached-password-hashes-file"),
+                        applicationName);
     }
 
     public boolean isPasswordAllowed(String password) {
@@ -56,7 +62,10 @@ public class PasswordPolicyService {
                 && !breachedPasswordHashes.contains(sha1(password));
     }
 
-    private static Set<String> loadCommonPasswords(Path configuredPath, boolean sampleData) {
+    private static Set<String> loadCommonPasswords(
+            Path configuredPath,
+            boolean sampleData,
+            String applicationName) {
         Path path = configuredPath.toAbsolutePath().normalize();
         if (!Files.isRegularFile(path) || !Files.isReadable(path)) {
             throw startupFailure(
@@ -97,13 +106,15 @@ public class PasswordPolicyService {
             throw startupFailure(
                     ("Common-password denylist at '%s' has %d distinct 8-72 character entries; "
                             + "at least 3,000 are required. Add an approved dataset before "
-                            + "starting JAVARA.")
-                            .formatted(path, passwords.size()));
+                            + "starting %s.")
+                            .formatted(path, passwords.size(), applicationName));
         }
         return Set.copyOf(passwords);
     }
 
-    private static Set<String> loadBreachedPasswordHashes(Path configuredPath) {
+    private static Set<String> loadBreachedPasswordHashes(
+            Path configuredPath,
+            String applicationName) {
         Path path = configuredPath.toAbsolutePath().normalize();
         if (!Files.isRegularFile(path) || !Files.isReadable(path)) {
             throw startupFailure(
@@ -145,7 +156,7 @@ public class PasswordPolicyService {
             throw startupFailure(
                     "Breached-password hash dataset at '%s' contains no valid hashes. Provide an "
                             .formatted(path)
-                            + "approved dataset before starting JAVARA.");
+                                + "approved dataset before starting " + applicationName + ".");
         }
         return Set.copyOf(hashes);
     }

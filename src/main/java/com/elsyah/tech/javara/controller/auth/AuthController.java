@@ -24,11 +24,19 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.elsyah.tech.javara.entity.user.UserEntity;
+import com.elsyah.tech.javara.middleware.config.ApplicationIdentityProperties;
 import com.elsyah.tech.javara.middleware.security.JwtProperties;
 import com.elsyah.tech.javara.middleware.security.TokenTransport;
 import com.elsyah.tech.javara.request.auth.LoginRequest;
 import com.elsyah.tech.javara.request.auth.EmailChangeRequest;
 import com.elsyah.tech.javara.request.auth.EmailVerificationResendRequest;
+import com.elsyah.tech.javara.request.auth.MfaEmailEnrollmentRequest;
+import com.elsyah.tech.javara.request.auth.MfaEmailVerificationRequest;
+import com.elsyah.tech.javara.request.auth.MfaLoginOtpVerificationRequest;
+import com.elsyah.tech.javara.request.auth.MfaLoginPasskeyVerificationRequest;
+import com.elsyah.tech.javara.request.auth.MfaPasskeyEnrollmentOptionsRequest;
+import com.elsyah.tech.javara.request.auth.MfaPasskeyRegistrationRequest;
+import com.elsyah.tech.javara.request.auth.MfaPreferenceRequest;
 import com.elsyah.tech.javara.request.auth.PasswordChangeRequest;
 import com.elsyah.tech.javara.request.auth.PasswordResetRequest;
 import com.elsyah.tech.javara.request.auth.RefreshTokenRequest;
@@ -37,9 +45,13 @@ import com.elsyah.tech.javara.request.user.UserRequest;
 import com.elsyah.tech.javara.response.common.ApiResponse;
 import com.elsyah.tech.javara.response.auth.AuthTokenResponse;
 import com.elsyah.tech.javara.response.auth.CsrfTokenResponse;
+import com.elsyah.tech.javara.response.auth.MfaChallengeResponse;
+import com.elsyah.tech.javara.response.auth.MfaStatusResponse;
+import com.elsyah.tech.javara.response.auth.PublicRegistrationResponse;
 import com.elsyah.tech.javara.response.user.UserResponse;
 import com.elsyah.tech.javara.service.auth.AuthService;
 import com.elsyah.tech.javara.service.auth.AuthServiceResult;
+import com.elsyah.tech.javara.service.auth.MfaService;
 import com.elsyah.tech.javara.service.auth.PasswordResetService;
 import com.elsyah.tech.javara.service.email.EmailVerificationService;
 import com.elsyah.tech.javara.service.common.ServiceResult;
@@ -57,34 +69,37 @@ public class AuthController {
     private final AuthService authService;
     private final EmailVerificationService emailVerificationService;
     private final PasswordResetService passwordResetService;
+    private final MfaService mfaService;
     private final JwtProperties jwtProperties;
+    private final ApplicationIdentityProperties applicationIdentity;
 
     public AuthController(
             UserService userService,
             AuthService authService,
             EmailVerificationService emailVerificationService,
             PasswordResetService passwordResetService,
-            JwtProperties jwtProperties) {
+            MfaService mfaService,
+            JwtProperties jwtProperties,
+            ApplicationIdentityProperties applicationIdentity) {
         this.userService = userService;
         this.authService = authService;
         this.emailVerificationService = emailVerificationService;
         this.passwordResetService = passwordResetService;
+        this.mfaService = mfaService;
         this.jwtProperties = jwtProperties;
+        this.applicationIdentity = applicationIdentity;
     }
 
     @PostMapping("/register")
-    public ResponseEntity<ApiResponse<UserResponse>> register(
+    public ResponseEntity<ApiResponse<Void>> register(
             @Valid @RequestBody RegisterRequest request) {
         ServiceResult<UserEntity> result = userService.registerUser(
                 new UserRequest(request.email(), request.password(), null));
-        if (result.isError()) {
+        if (result.isError() && result.status() != HttpStatus.CONFLICT) {
             return ResponseEntity.status(result.status())
                     .body(ApiResponse.failure(result.status(), result.message()));
         }
-
-        UserResponse user = UserResponse.from(result.data());
-        return ResponseEntity.status(result.status())
-                .body(ApiResponse.success(result.status(), result.message(), user));
+        return PublicRegistrationResponse.accepted();
     }
 
     @GetMapping("/email/verify")
@@ -97,18 +112,20 @@ public class AuthController {
                     .body("Invalid or expired email verification link.");
         }
         String escapedToken = org.springframework.web.util.HtmlUtils.htmlEscape(token);
+        String escapedApplicationName =
+                org.springframework.web.util.HtmlUtils.htmlEscape(applicationIdentity.name());
         String page = """
                 <!doctype html>
                 <html lang="en">
                 <head><meta charset="utf-8"><meta name="referrer" content="no-referrer">
-                <title>Confirm JAVARA email</title></head>
+                <title>Confirm %s email</title></head>
                 <body><main><h1>Confirm your email address</h1>
                 <p>Select the button to complete verification.</p>
                 <form method="post" action="/api/v1/auth/email/verify">
                 <input type="hidden" name="token" value="%s">
                 <button type="submit">Confirm email</button>
                 </form></main></body></html>
-                """.formatted(escapedToken);
+                """.formatted(escapedApplicationName, escapedToken);
         return ResponseEntity.ok()
                 .contentType(MediaType.TEXT_HTML)
                 .header(HttpHeaders.CACHE_CONTROL, "no-store")
@@ -161,11 +178,13 @@ public class AuthController {
                     HttpStatus.BAD_REQUEST, INVALID_PASSWORD_RESET_LINK_MESSAGE);
         }
         String escapedToken = org.springframework.web.util.HtmlUtils.htmlEscape(token);
+        String escapedApplicationName =
+                org.springframework.web.util.HtmlUtils.htmlEscape(applicationIdentity.name());
         String page = """
                 <!doctype html>
                 <html lang="en">
                 <head><meta charset="utf-8"><meta name="referrer" content="no-referrer">
-                <title>Reset JAVARA password</title></head>
+                <title>Reset %s password</title></head>
                 <body><main><h1>Reset your password</h1>
                 <form method="post" action="/api/v1/auth/password/reset">
                 <input type="hidden" name="token" value="%s">
@@ -174,7 +193,7 @@ public class AuthController {
                        autocomplete="new-password" required></label>
                 <button type="submit">Set password</button>
                 </form></main></body></html>
-                """.formatted(escapedToken);
+                """.formatted(escapedApplicationName, escapedToken);
         return passwordResetHtmlResponse(HttpStatus.OK, page);
     }
 
@@ -192,15 +211,17 @@ public class AuthController {
         return passwordResetPage(result.status(), result.message());
     }
 
-    private static ResponseEntity<String> passwordResetFormPage(
+    private ResponseEntity<String> passwordResetFormPage(
             HttpStatus status, String message, String token) {
         String escapedMessage = org.springframework.web.util.HtmlUtils.htmlEscape(message);
         String escapedToken = org.springframework.web.util.HtmlUtils.htmlEscape(token);
+        String escapedApplicationName =
+                org.springframework.web.util.HtmlUtils.htmlEscape(applicationIdentity.name());
         String page = """
                 <!doctype html>
                 <html lang="en">
                 <head><meta charset="utf-8"><meta name="referrer" content="no-referrer">
-                <title>Reset JAVARA password</title></head>
+                <title>Reset %s password</title></head>
                 <body><main><h1>Reset your password</h1>
                 <p role="alert">%s</p>
                 <form method="post" action="/api/v1/auth/password/reset">
@@ -210,20 +231,25 @@ public class AuthController {
                        autocomplete="new-password" required></label>
                 <button type="submit">Set password</button>
                 </form></main></body></html>
-                """.formatted(escapedMessage, escapedToken);
+                """.formatted(
+                        escapedApplicationName,
+                        escapedMessage,
+                        escapedToken);
         return passwordResetHtmlResponse(status, page);
     }
 
-    private static ResponseEntity<String> passwordResetPage(
+    private ResponseEntity<String> passwordResetPage(
             HttpStatus status, String message) {
         String escapedMessage = org.springframework.web.util.HtmlUtils.htmlEscape(message);
+        String escapedApplicationName =
+                org.springframework.web.util.HtmlUtils.htmlEscape(applicationIdentity.name());
         String page = """
                 <!doctype html>
                 <html lang="en"><head><meta charset="utf-8">
                 <meta name="referrer" content="no-referrer">
-                <title>JAVARA password reset</title></head>
+                <title>%s password reset</title></head>
                 <body><main><h1>%s</h1></main></body></html>
-                """.formatted(escapedMessage);
+                """.formatted(escapedApplicationName, escapedMessage);
         return passwordResetHtmlResponse(status, page);
     }
 
@@ -263,12 +289,121 @@ public class AuthController {
     public ResponseEntity<ApiResponse<AuthTokenResponse>> login(
             @Valid @RequestBody LoginRequest request) {
         AuthServiceResult result = authService.login(request);
+        return authenticationResponse(result, "Login successful");
+    }
+
+    @PostMapping("/mfa/login/otp/verify")
+    public ResponseEntity<ApiResponse<AuthTokenResponse>> verifyMfaOtpLogin(
+            @Valid @RequestBody MfaLoginOtpVerificationRequest request) {
+        return authenticationResponse(
+                authService.verifyMfaOtpLogin(request.challengeId(), request.code()),
+                "Login successful");
+    }
+
+    @PostMapping("/mfa/login/passkey/verify")
+    public ResponseEntity<ApiResponse<AuthTokenResponse>> verifyMfaPasskeyLogin(
+            @Valid @RequestBody MfaLoginPasskeyVerificationRequest request) {
+        return authenticationResponse(
+                authService.verifyMfaPasskeyLogin(
+                        request.challengeId(), request.credential()),
+                "Login successful");
+    }
+
+    @PostMapping("/mfa/login/passkey/enroll")
+    public ResponseEntity<ApiResponse<AuthTokenResponse>> completeRequiredPasskeyEnrollment(
+            @Valid @RequestBody MfaPasskeyRegistrationRequest request) {
+        return authenticationResponse(
+                authService.completeRequiredPasskeyEnrollment(
+                        request.challengeId(), request.label(), request.credential()),
+                "Login successful");
+    }
+
+    @GetMapping("/mfa")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<MfaStatusResponse>> mfaStatus(
+            @AuthenticationPrincipal Jwt principal) {
+        ServiceResult<MfaStatusResponse> result =
+                mfaService.status(UUID.fromString(principal.getSubject()));
+        return mfaStatusResponse(result);
+    }
+
+    @PostMapping("/mfa/email/enroll")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<MfaChallengeResponse>> beginEmailMfaEnrollment(
+            @AuthenticationPrincipal Jwt principal,
+            @Valid @RequestBody MfaEmailEnrollmentRequest request) {
+        ServiceResult<MfaChallengeResponse> result = mfaService.beginEmailEnrollment(
+                UUID.fromString(principal.getSubject()), request.currentPassword());
         if (result.isError()) {
             return ResponseEntity.status(result.status())
                     .body(ApiResponse.failure(result.status(), result.message()));
         }
+        return ResponseEntity.status(result.status())
+                .body(ApiResponse.success(result.status(), result.message(), result.data()));
+    }
 
-        return tokenResponse(result, "Login successful");
+    @PostMapping("/mfa/email/enroll/verify")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<MfaStatusResponse>> verifyEmailMfaEnrollment(
+            @AuthenticationPrincipal Jwt principal,
+            @Valid @RequestBody MfaEmailVerificationRequest request) {
+        ServiceResult<MfaStatusResponse> result = mfaService.verifyEmailEnrollment(
+                UUID.fromString(principal.getSubject()),
+                request.challengeId(),
+                request.code());
+        return mfaStatusResponse(result);
+    }
+
+    @PostMapping("/mfa/passkeys/enroll/options")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<MfaChallengeResponse>> beginPasskeyEnrollment(
+            @AuthenticationPrincipal Jwt principal,
+            @Valid @RequestBody MfaPasskeyEnrollmentOptionsRequest request) {
+        ServiceResult<MfaChallengeResponse> result = mfaService.beginPasskeyEnrollment(
+                UUID.fromString(principal.getSubject()), request.currentPassword());
+        if (result.isError()) {
+            return ResponseEntity.status(result.status())
+                    .body(ApiResponse.failure(result.status(), result.message()));
+        }
+        return ResponseEntity.status(result.status())
+                .body(ApiResponse.success(result.status(), result.message(), result.data()));
+    }
+
+    @PostMapping("/mfa/passkeys/enroll")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<MfaStatusResponse>> completePasskeyEnrollment(
+            @AuthenticationPrincipal Jwt principal,
+            @Valid @RequestBody MfaPasskeyRegistrationRequest request) {
+        ServiceResult<MfaStatusResponse> result = mfaService.completePasskeyEnrollment(
+                UUID.fromString(principal.getSubject()),
+                request.challengeId(),
+                request.label(),
+                request.credential());
+        return mfaStatusResponse(result);
+    }
+
+    @PostMapping("/mfa/preference")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<MfaStatusResponse>> setMfaPreference(
+            @AuthenticationPrincipal Jwt principal,
+            @Valid @RequestBody MfaPreferenceRequest request) {
+        ServiceResult<MfaStatusResponse> result = mfaService.setPreferredMethod(
+                UUID.fromString(principal.getSubject()),
+                request.method(),
+                request.currentPassword());
+        return mfaStatusResponse(result);
+    }
+
+    @PostMapping("/mfa/disable")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<MfaStatusResponse>> disableMfaMethod(
+            @AuthenticationPrincipal Jwt principal,
+            @Valid @RequestBody MfaPreferenceRequest request) {
+        ServiceResult<MfaStatusResponse> result = mfaService.disableMethod(
+                UUID.fromString(principal.getSubject()),
+                request.method(),
+                request.currentPassword());
+        return mfaStatusResponse(result);
     }
 
     @PostMapping("/refresh")
@@ -369,7 +504,34 @@ public class AuthController {
                     "/api/v1/auth",
                     jwtProperties.refreshTokenTtl()).toString());
         }
+
         return response.body(ApiResponse.success(result.status(), message, data));
+    }
+
+    private ResponseEntity<ApiResponse<AuthTokenResponse>> authenticationResponse(
+            AuthServiceResult result, String successMessage) {
+        if (result.isError()) {
+            return ResponseEntity.status(result.status())
+                    .body(ApiResponse.failure(result.status(), result.message()));
+        }
+        if (result.mfaChallenge() != null) {
+            AuthTokenResponse challengeResponse = new AuthTokenResponse(
+                    null, null, null, null, null, result.mfaChallenge());
+            return ResponseEntity.status(result.status())
+                    .body(ApiResponse.success(
+                            result.status(), result.message(), challengeResponse));
+        }
+        return tokenResponse(result, successMessage);
+    }
+
+    private static ResponseEntity<ApiResponse<MfaStatusResponse>> mfaStatusResponse(
+            ServiceResult<MfaStatusResponse> result) {
+        if (result.isError()) {
+            return ResponseEntity.status(result.status())
+                    .body(ApiResponse.failure(result.status(), result.message()));
+        }
+        return ResponseEntity.status(result.status())
+                .body(ApiResponse.success(result.status(), result.message(), result.data()));
     }
 
     private String refreshToken(

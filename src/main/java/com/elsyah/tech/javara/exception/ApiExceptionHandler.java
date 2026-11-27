@@ -1,5 +1,7 @@
 package com.elsyah.tech.javara.exception;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 import java.util.stream.Collectors;
 
 import org.hibernate.exception.ConstraintViolationException;
@@ -22,6 +24,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import com.elsyah.tech.javara.response.common.ApiResponse;
 import com.elsyah.tech.javara.middleware.ratelimit.RateLimitExceededException;
 import com.elsyah.tech.javara.middleware.ratelimit.RateLimitUnavailableException;
+import com.elsyah.tech.javara.response.auth.PublicRegistrationResponse;
 
 /**
  * ApiExceptionHandler is a global exception handler for the application. 
@@ -65,8 +68,12 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiResponse<Void>> handleDataIntegrityViolation(
-            DataIntegrityViolationException exception) {
+            DataIntegrityViolationException exception,
+            HttpServletRequest request) {
         if (violatesActiveUserEmailUniqueness(exception)) {
+            if (isPublicRegistrationRequest(request)) {
+                return PublicRegistrationResponse.accepted();
+            }
             HttpStatus status = HttpStatus.CONFLICT;
             return ResponseEntity.status(status)
                     .body(ApiResponse.failure(status, "Email already exists"));
@@ -76,6 +83,12 @@ public class ApiExceptionHandler {
         HttpStatus status = HttpStatus.INTERNAL_SERVER_ERROR;
         return ResponseEntity.status(status)
                 .body(ApiResponse.failure(status, "A data integrity constraint was violated"));
+    }
+
+    private static boolean isPublicRegistrationRequest(HttpServletRequest request) {
+        return "POST".equals(request.getMethod())
+                && request.getRequestURI()
+                        .equals(request.getContextPath() + "/api/v1/auth/register");
     }
 
     @ExceptionHandler({

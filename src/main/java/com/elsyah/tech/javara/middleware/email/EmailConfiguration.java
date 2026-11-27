@@ -6,12 +6,15 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 
+import com.elsyah.tech.javara.middleware.config.ApplicationIdentityProperties;
+
 @Configuration
 @EnableConfigurationProperties(EmailProperties.class)
 public class EmailConfiguration {
     @Bean
     EmailSettings emailSettings(
             EmailProperties properties,
+            ApplicationIdentityProperties applicationIdentity,
             Environment environment) {
         boolean productionProfile =
                 environment.acceptsProfiles(Profiles.of("prod", "production", "staging"));
@@ -37,7 +40,8 @@ public class EmailConfiguration {
         if (mailHost == null || mailHost.isBlank()) {
             throw new IllegalStateException(
                     "Email delivery is enabled but spring.mail.host is missing. Configure "
-                            + "SMTP host, authentication, and TLS before starting JAVARA.");
+                            + "SMTP host, authentication, and TLS before starting "
+                            + applicationIdentity.name() + ".");
         }
         String username = environment.getProperty("spring.mail.username");
         String password = environment.getProperty("spring.mail.password");

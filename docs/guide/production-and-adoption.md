@@ -15,6 +15,7 @@ your product before using real accounts or sensitive data.
 - USER/ADMIN authorization and same-user checks for ID-based operations
 - Redis-based per-IP limits for login, registration, and refresh
 - SMTP email verification for public registrations and security notifications
+- Optional email OTP and WebAuthn passkey MFA with deployment-wide policy
 - Configurable common and compromised-password checks using operator-managed
   offline datasets
 - Unit and isolated PostgreSQL/Redis integration tests
@@ -25,9 +26,8 @@ The current service does not provide:
 
 - Organization or tenant isolation
 - Business-specific roles, permissions, or approval workflows
-- Password recovery or multi-factor authentication
-- A generic response for duplicate public registrations; an existing email
-  still receives a conflict response
+- SMS/WhatsApp MFA delivery, phone-number enrollment, and tenant-specific MFA
+  policies
 - Audit history for administrator actions
 - A PATCH endpoint or versioned API beyond `/api/v1`
 - A complete health/metrics and operational monitoring solution
@@ -60,6 +60,27 @@ verification can be requested again, while password-change, email-change, and
 new-session security notices may be lost during an SMTP outage. Monitor mail
 delivery failures and plan durable delivery before relying on these notices as
 an operational alert.
+
+### Multi-factor authentication
+
+Email OTP and WebAuthn passkeys are available as configurable MFA methods.
+MFA is optional by default and can be required deployment-wide. Select only
+methods that have a configured provider; the application rejects SMS or
+WhatsApp in `allowed-methods` until those delivery integrations and phone
+enrollment are implemented. This is a global deployment policy, not a
+per-tenant control.
+
+For production WebAuthn, configure the relying-party ID for the public site
+and exact HTTPS origins. The production-like profiles reject localhost
+relying-party IDs and non-HTTPS origins. Verify the browser and authenticator
+flows in the actual deployment before enabling passkeys for users.
+
+Email OTP is not phishing-resistant. WebAuthn support does not by itself
+establish that a deployment meets ASVS Level 3: configure and verify the
+required factor policy, supported authenticators, origin/RP settings, and
+recovery process. Login MFA currently does not provide step-up verification
+for sensitive operations. Do not claim Level 3 MFA compliance based only on
+the presence of these code paths.
 
 ### Password policy datasets
 

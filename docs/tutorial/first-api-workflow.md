@@ -28,9 +28,10 @@ curl -i -X POST http://localhost:8080/api/v1/auth/register \
   -d '{"email":"sam@example.com","password":"local-demo-123"}'
 ```
 
-The success response is wrapped in `data`. Copy the `id` from
-`data.id`; you will use it in the next step. No demo user is inserted by
-database migrations.
+The response is a generic `202 Accepted` and does not reveal whether the email
+was already registered. For a new address, follow the verification instructions
+sent by email before signing in. No demo user is inserted by database
+migrations.
 
 ## 3. Sign in
 
@@ -40,11 +41,12 @@ curl -i -X POST http://localhost:8080/api/v1/auth/login \
   -d '{"email":"sam@example.com","password":"local-demo-123"}'
 ```
 
-The response contains `data.accessToken` and `data.refreshToken`. Copy these
-values from the response and set them in your terminal:
+The response contains `data.accessToken`, `data.refreshToken`, and the user
+profile. Copy the user ID and token values from the response and set them in
+your terminal:
 
 ```bash
-USER_ID="<copy-data.id-from-registration>"
+USER_ID="<copy-data.user.id-from-login>"
 ACCESS_TOKEN="<copy-data.accessToken-from-login>"
 REFRESH_TOKEN="<copy-data.refreshToken-from-login>"
 ```

@@ -92,6 +92,7 @@ Supported operations include:
 - CSRF protection for cookie transport
 - USER/ADMIN roles with user ownership checks
 - Public user registration and configurable initial ADMIN bootstrap
+- Optional or required email OTP and WebAuthn passkey MFA
 - Redis-backed authentication rate limiting
 - Standard success and error response wrapper
 - Selected-column projection queries
@@ -104,6 +105,8 @@ Supported operations include:
 - API versioning beyond the current URL prefix
 - Audit logging
 - Production secrets management
+- SMS/WhatsApp MFA providers and tenant-specific MFA policy
+- MFA step-up verification for sensitive operations
 - Full pagination metadata
 - PATCH endpoint
 
@@ -195,7 +198,7 @@ If PostgreSQL and Redis are already available, configure them instead of install
 make setup
 ```
 
-The setup first offers to install JDK 25 if needed, then asks for service connection details, initial ADMIN email/password, token transport, and an application timezone (IANA; default `UTC`). It generates an HS256 signing key, checks TCP reachability when `nc` is available, then saves the runtime configuration in `config/application.yml` with restricted file permissions. This local file is excluded from Git. `make run` loads this file as the application's configuration.
+The setup first offers to install JDK 25 if needed, then asks for service connection details, initial ADMIN email/password, token transport, application name (default `JAVARA`), email attribution (default `JAVARA`), and an application timezone (IANA; default `UTC`). Enter `none` to omit the email's “Powered by” attribution. It generates an HS256 signing key, checks TCP reachability when `nc` is available, then saves the runtime configuration in `config/application.yml` with restricted file permissions. This local file is excluded from Git. `make run` loads this file as the application's configuration.
 
 The setup check confirms that the host and port are reachable; the application verifies database and Redis credentials when it starts.
 
@@ -269,8 +272,16 @@ src/main/resources/db/migration
 
 | Migration | Purpose |
 |---|---|
-| `V1__create_user.sql` | Creates the `users` table and indexes, including active-user email uniqueness and optimistic locking |
+| `V1__create_user.sql` | Creates users, active-email uniqueness, and optimistic locking |
 | `V2__create_refresh_tokens.sql` | Creates hashed refresh-token storage |
+| `V3__create_oauth2_client_credentials.sql` | Adds service-client credentials |
+| `V4__add_session_lifecycle.sql` | Adds refresh-token session lifecycle fields |
+| `V5__add_email_verification.sql` | Adds verified-email state and tokens |
+| `V6__add_admin_password_reset.sql` | Adds administrator password recovery records |
+| `V7__require_support_authorization_for_emergency_recovery.sql` | Requires support authorization for emergency recovery |
+| `V8__track_compromised_password_hashes.sql` | Tracks invalidated credentials |
+| `V9__add_mfa_support.sql` | Adds MFA methods, challenges, passkey storage, and authentication methods |
+| `V10__bind_mfa_challenges_to_password.sql` | Invalidates MFA challenges when the user's password changes |
 
 JAVARA migrations do not insert demo users or other example business data.
 Flyway applies versioned files in this directory at application startup.
@@ -331,7 +342,11 @@ Base URL:
 /api/v1
 ```
 
-Except for `/`, registration, login, refresh, and the cookie-mode CSRF endpoint, requests require authentication. The user-management list/create routes are ADMIN-only; ID-based routes require the matching USER or an ADMIN.
+Except for `/`, registration, login, MFA challenge verification, refresh, and
+the cookie-mode CSRF endpoint, requests require authentication. MFA challenge
+routes are public only to finish a previously issued challenge. The
+user-management list/create routes are ADMIN-only; ID-based routes require
+the matching USER or an ADMIN.
 
 ### Welcome
 
@@ -382,7 +397,9 @@ curl -X POST http://localhost:8080/api/v1/users \
 
 This endpoint is ADMIN-only. Public registration is documented below.
 
-Duplicate active email status: `409 Conflict`
+Duplicate active email for this ADMIN-only endpoint returns `409 Conflict`.
+Public registration uses a generic `202 Accepted` response for both new and
+already-registered email addresses to prevent account enumeration.
 
 ### Authentication and Authorization
 
@@ -408,6 +425,10 @@ curl -X POST http://localhost:8080/api/v1/auth/register \
   -d '{"email":"user@example.com","password":"password123"}'
 ```
 
+Public registration returns the same generic `202 Accepted` response whether
+the address is new or already registered. New eligible accounts receive email
+verification instructions; the response never returns a user record.
+
 Login:
 
 ```bash
@@ -418,11 +439,22 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
 
 Cookie mode is the default. A successful login sets the access and refresh tokens in HttpOnly cookies; the browser SDK sends cookies, refreshes after a protected request returns `401`, and retries that request once. The SDK never reads either token. See [`sdk/browser`](sdk/browser) for the browser adapter. Other runtimes can use the same HTTP contract and select Bearer transport with `app.security.jwt.transport: BEARER`.
 
+When an account has MFA enabled or deployment policy requires it, login
+returns a `202` challenge without issuing tokens or cookies. Complete the
+email OTP or WebAuthn passkey challenge before receiving the session tokens.
+MFA configuration and endpoints are documented in the
+[configuration guide](docs/guide/configuration.md#multi-factor-authentication)
+and [API guide](docs/guide/api-usage.md#mfa-login-and-enrollment).
+
 Access tokens expire after 15 minutes by default. Refresh tokens expire after 30 days, are stored in PostgreSQL only as SHA-256 hashes, and are revoked on rotation or logout. Reuse of a revoked refresh token revokes the user's other active refresh tokens. Changing a user's password revokes all of that user's active refresh tokens; already-issued access JWTs remain valid until their short expiry.
 
 The access cookie is sent to API routes; the refresh cookie is scoped to `/api/v1/auth`. Cookie mode enables CSRF protection: the SDK obtains the token from `GET /api/v1/auth/csrf` and sends it in `X-XSRF-TOKEN` for POST/PUT/PATCH/DELETE requests. Logout works with the refresh cookie even after the access cookie expires. Cookies are Secure by default; cross-site deployments must configure `SameSite: None`, HTTPS, CORS credentials, and explicit allowed origins.
 
-`/` and `/api/v1/auth/register`, `/api/v1/auth/login`, and `/api/v1/auth/refresh` are public. All `/api/v1/users/**` routes require authentication. USER accounts can access their own ID-based user routes; list and create operations, and all other-user management, require ADMIN.
+`/`, registration, login, MFA challenge verification, refresh, and the
+cookie-mode CSRF endpoint are public. MFA challenge routes are public only to
+complete a previously issued challenge. All `/api/v1/users/**` routes require
+authentication. USER accounts can access their own ID-based user routes; list
+and create operations, and all other-user management, require ADMIN.
 
 The initial ADMIN is created from `app.security.bootstrap-admin.email` and `.password` on startup when `enabled: true`. A matching existing USER is never promoted automatically; startup fails with a clear error instead.
 

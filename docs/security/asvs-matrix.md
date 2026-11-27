@@ -6,7 +6,7 @@
 |---|---|
 | Standard | OWASP Application Security Verification Standard (ASVS) v5.0.0 |
 | Requested target | Level 3 |
-| Assessment status | In progress; 6 requirements `Fail`, 15 `Pending`, 324 `Not assessed`, none `Pass`; see [assessment record](assessment/README.md) |
+| Assessment status | In progress; 5 requirements `Fail`, 16 `Pending`, 324 `Not assessed`, none `Pass`; see [assessment record](assessment/README.md) |
 | Assessor and assessment date | To be completed |
 | Intended use | Reusable JAVARA baseline for banking, finance/fintech, energy, and startup solutions |
 | Product objective | Modular, configurable, secure foundation for multi-company solutions; not yet assessed |
@@ -40,7 +40,7 @@ for an explicit decision rather than silently marking it `Not applicable`.
 
 The initial V6/V7 source review recorded 21 requirements as `Fail`. Following
 remediation in commit `b009b8a` and local verification, the current disposition
-is 6 `Fail`, 15 `Pending` retest/evidence, and 324 `Not assessed`. No
+is 5 `Fail`, 16 `Pending` retest/evidence, and 324 `Not assessed`. No
 requirement is currently marked `Pass` or excluded. See the
 [authentication and session management
 review](assessment/authentication-session-review.md) for scope, evidence, and
@@ -261,12 +261,12 @@ It is not endorsed by OWASP.
 | `v5.0.0-V6.2.12` | L2 | In scope | Pending | [AUTH-04](assessment/authentication-session-review.md#auth-04) | Offline hash lookup implemented; approved corpus and deployment evidence remain. |
 | `v5.0.0-V6.3.1` | L1 | Pending | Not assessed |  |  |
 | `v5.0.0-V6.3.2` | L1 | Pending | Not assessed |  |  |
-| `v5.0.0-V6.3.3` | L2 | In scope | Fail | [AUTH-05](assessment/authentication-session-review.md#auth-05) | Owner TBD; verify Level 3 hardware-based phishing-resistant factor. |
+| `v5.0.0-V6.3.3` | L2 | In scope | Fail | [AUTH-05](assessment/authentication-session-review.md#auth-05) | Local Email OTP enrollment/login and session revocation manually verified; verify production WebAuthn policy, authenticators, and phishing resistance. |
 | `v5.0.0-V6.3.4` | L2 | Pending | Not assessed |  |  |
 | `v5.0.0-V6.3.5` | L3 | In scope | Fail | [AUTH-06](assessment/authentication-session-review.md#auth-06) | Owner TBD; test suspicious-auth detection and notifications. |
 | `v5.0.0-V6.3.6` | L3 | Pending | Not assessed |  |  |
 | `v5.0.0-V6.3.7` | L3 | In scope | Pending | [AUTH-07](assessment/authentication-session-review.md#auth-07) | Email notifications implemented; verify all event delivery and failure/retry handling. |
-| `v5.0.0-V6.3.8` | L3 | In scope | Fail | [AUTH-08](assessment/authentication-session-review.md#auth-08) | Owner TBD; test registration against account enumeration. |
+| `v5.0.0-V6.3.8` | L3 | In scope | Pending | [AUTH-08](assessment/authentication-session-review.md#auth-08) | Registration returns the same generic response for new and existing addresses; automated checks and local retest pass. Complete requirement review, including timing considerations, remains. |
 | `v5.0.0-V6.4.1` | L1 | Pending | Not assessed |  |  |
 | `v5.0.0-V6.4.2` | L1 | Pending | Not assessed |  |  |
 | `v5.0.0-V6.4.3` | L2 | In scope | Pending | [AUTH-09](assessment/authentication-session-review.md#auth-09) | Local recovery succeeded with a new password; previously invalidated password was rejected without consuming the link. Requirement-specific coverage remains. |
@@ -311,7 +311,7 @@ It is not endorsed by OWASP.
 | `v5.0.0-V7.4.5` | L2 | In scope | Pending | [SES-07](assessment/authentication-session-review.md#ses-07) | Admin termination manually exercised; audit-trail and complete requirement review remain. |
 | `v5.0.0-V7.5.1` | L2 | In scope | Pending | [SES-08](assessment/authentication-session-review.md#ses-08) | Re-authenticated email change and confirmation manually exercised; complete requirement review remains. |
 | `v5.0.0-V7.5.2` | L2 | In scope | Pending | [SES-09](assessment/authentication-session-review.md#ses-09) | Session listing and self/admin termination flows manually exercised; complete requirement review remains. |
-| `v5.0.0-V7.5.3` | L3 | In scope | Fail | [SES-10](assessment/authentication-session-review.md#ses-10) | Owner TBD; test step-up verification for sensitive operations. |
+| `v5.0.0-V7.5.3` | L3 | In scope | Fail | [SES-10](assessment/authentication-session-review.md#ses-10) | Login MFA does not enforce step-up verification for sensitive operations. |
 | `v5.0.0-V7.6.1` | L2 | Pending | Not assessed |  |  |
 | `v5.0.0-V7.6.2` | L2 | Pending | Not assessed |  |  |
 

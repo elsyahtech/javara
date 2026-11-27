@@ -29,6 +29,14 @@ public class AccessTokenService {
     }
 
     public String issue(UserEntity user, UUID sessionId, Instant authenticatedAt) {
+        return issue(user, sessionId, authenticatedAt, List.of("pwd"));
+    }
+
+    public String issue(
+            UserEntity user,
+            UUID sessionId,
+            Instant authenticatedAt,
+            List<String> authenticationMethods) {
         Instant issuedAt = clock.instant();
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .issuer(JwtTokenConfiguration.issuer())
@@ -38,6 +46,7 @@ public class AccessTokenService {
                 .id(UUID.randomUUID().toString())
                 .claim("sid", sessionId.toString())
                 .claim("auth_time", authenticatedAt.getEpochSecond())
+                .claim("amr", List.copyOf(authenticationMethods))
                 .claim("email", user.getEmail())
                 .claim("roles", List.of(user.getRole().name()))
                 .build();

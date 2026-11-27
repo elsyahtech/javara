@@ -28,6 +28,8 @@ import org.springframework.http.HttpStatus;
 import com.elsyah.tech.javara.entity.auth.EmailVerificationPurpose;
 import com.elsyah.tech.javara.entity.auth.EmailVerificationTokenEntity;
 import com.elsyah.tech.javara.entity.user.UserEntity;
+import com.elsyah.tech.javara.middleware.config.ApplicationBrandingProperties;
+import com.elsyah.tech.javara.middleware.config.ApplicationIdentityProperties;
 import com.elsyah.tech.javara.middleware.email.EmailSettings;
 import com.elsyah.tech.javara.repository.auth.EmailVerificationTokenRepository;
 import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
@@ -43,8 +45,7 @@ class EmailVerificationServiceTests {
         EmailVerificationTokenRepository tokenRepository =
                 mock(EmailVerificationTokenRepository.class);
         ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
-        EmailNotificationService notifications = new EmailNotificationService(
-                settings(), publisher);
+        EmailNotificationService notifications = notifications(publisher);
         EmailVerificationService service = service(tokenRepository, mock(UserRepository.class),
                 notifications);
         UserEntity user = user();
@@ -69,7 +70,7 @@ class EmailVerificationServiceTests {
         EmailVerificationService service = service(
                 tokenRepository,
                 userRepository,
-                new EmailNotificationService(settings(), mock(ApplicationEventPublisher.class)));
+                notifications(mock(ApplicationEventPublisher.class)));
         UserEntity user = user();
         user.setEmailVerified(false);
         EmailVerificationTokenEntity token = token(user.getId(), "valid-token");
@@ -94,7 +95,7 @@ class EmailVerificationServiceTests {
         EmailVerificationService service = service(
                 tokenRepository,
                 userRepository,
-                new EmailNotificationService(settings(), mock(ApplicationEventPublisher.class)));
+                notifications(mock(ApplicationEventPublisher.class)));
         EmailVerificationTokenEntity token = token(user().getId(), "expired-token");
         token.setExpiresAt(NOW.minusSeconds(1));
         when(tokenRepository.findByTokenHashForUpdate(hash("expired-token")))
@@ -125,6 +126,15 @@ class EmailVerificationServiceTests {
                 Duration.ofHours(24),
                 "notify@example.com",
                 "https://javara.example.com");
+    }
+
+    private static EmailNotificationService notifications(
+            ApplicationEventPublisher publisher) {
+        return new EmailNotificationService(
+                settings(),
+                publisher,
+                new ApplicationIdentityProperties("Test Application"),
+                new ApplicationBrandingProperties("JAVARA"));
     }
 
     private static UserEntity user() {

@@ -15,6 +15,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import com.elsyah.tech.javara.middleware.config.ApplicationIdentityProperties;
 import com.elsyah.tech.javara.middleware.security.PasswordPolicyProperties;
 import com.elsyah.tech.javara.service.user.PasswordPolicyService;
 
@@ -30,7 +31,7 @@ class PasswordPolicyServiceTests {
                 breachedHashes,
                 sha1("compromised-password") + ":12\n",
                 StandardCharsets.UTF_8);
-        PasswordPolicyService policy = new PasswordPolicyService(
+        PasswordPolicyService policy = policy(
                 new PasswordPolicyProperties(
                         true, false, commonPasswords.toString(), breachedHashes.toString()));
 
@@ -46,7 +47,7 @@ class PasswordPolicyServiceTests {
 
         IllegalStateException exception = assertThrows(
                 IllegalStateException.class,
-                () -> new PasswordPolicyService(new PasswordPolicyProperties(
+                () -> policy(new PasswordPolicyProperties(
                         true, false, missing.toString(), breached.toString())));
 
         assertTrue(exception.getMessage().contains("Password policy startup validation failed"));
@@ -66,11 +67,12 @@ class PasswordPolicyServiceTests {
 
         IllegalStateException exception = assertThrows(
                 IllegalStateException.class,
-                () -> new PasswordPolicyService(new PasswordPolicyProperties(
+                () -> policy(new PasswordPolicyProperties(
                         true, false, commonPasswords.toString(), breachedHashes.toString())));
 
         assertTrue(exception.getMessage().contains("has 2 distinct 8-72 character entries"));
         assertTrue(exception.getMessage().contains("at least 3,000 are required"));
+        assertTrue(exception.getMessage().contains("starting Test Application"));
     }
 
     @Test
@@ -81,7 +83,7 @@ class PasswordPolicyServiceTests {
 
         IllegalStateException exception = assertThrows(
                 IllegalStateException.class,
-                () -> new PasswordPolicyService(new PasswordPolicyProperties(
+                () -> policy(new PasswordPolicyProperties(
                         true, false, commonPasswords.toString(), breachedHashes.toString())));
 
         assertTrue(exception.getMessage().contains("invalid record at line 1"));
@@ -91,7 +93,7 @@ class PasswordPolicyServiceTests {
 
     @Test
     void explicitDisabledModeDoesNotRequireDatasetFiles() {
-        PasswordPolicyService policy = new PasswordPolicyService(
+        PasswordPolicyService policy = policy(
                 new PasswordPolicyProperties(
                         false,
                         false,
@@ -114,7 +116,7 @@ class PasswordPolicyServiceTests {
                 sha1("sample-breached-password") + "\n",
                 StandardCharsets.UTF_8);
 
-        PasswordPolicyService policy = new PasswordPolicyService(
+        PasswordPolicyService policy = policy(
                 new PasswordPolicyProperties(
                         true, true, commonPasswords.toString(), breachedHashes.toString()));
 
@@ -130,6 +132,12 @@ class PasswordPolicyServiceTests {
                 .toList();
         Files.write(file, entries, StandardCharsets.UTF_8);
         return file;
+    }
+
+    private PasswordPolicyService policy(PasswordPolicyProperties properties) {
+        return new PasswordPolicyService(
+                properties,
+                new ApplicationIdentityProperties("Test Application"));
     }
 
     private static String sha1(String value) throws Exception {

@@ -40,6 +40,29 @@ class AuthRateLimitInterceptorTests {
     }
 
     @Test
+    void checksMfaLoginVerificationUsingLoginPolicy() {
+        AuthRateLimiter limiter = mock(AuthRateLimiter.class);
+        LoginRateLimitProperties login = new LoginRateLimitProperties(
+                10, java.time.Duration.ofMinutes(1), "test:login", true);
+        AuthRateLimitInterceptor interceptor = new AuthRateLimitInterceptor(
+                limiter,
+                login,
+                new RegisterRateLimitProperties(
+                        5, java.time.Duration.ofHours(1), "test:register", true),
+                new RefreshRateLimitProperties(
+                        30, java.time.Duration.ofMinutes(1), "test:refresh", true),
+                sessionReauthProperties());
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setMethod("POST");
+        request.setRequestURI("/api/v1/auth/mfa/login/otp/verify");
+        request.setRemoteAddr("192.0.2.25");
+
+        assertTrue(interceptor.preHandle(request, new MockHttpServletResponse(), new Object()));
+
+        verify(limiter).checkAllowed("192.0.2.25", login);
+    }
+
+    @Test
     void checksRegisterAndRefreshUsingTheirOwnPolicies() {
         AuthRateLimiter limiter = mock(AuthRateLimiter.class);
         LoginRateLimitProperties login = new LoginRateLimitProperties(

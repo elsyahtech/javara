@@ -32,6 +32,13 @@ configure_auth_bootstrap() {
     printf '\n' >&2
     read -r -p "Token transport (cookie/bearer) [cookie]: " token_transport
     token_transport="${token_transport:-cookie}"
+    read -r -p "Application name [JAVARA]: " application_name
+    application_name="${application_name:-JAVARA}"
+    read -r -p "Email attribution (enter 'none' to disable) [JAVARA]: " powered_by
+    powered_by="${powered_by:-JAVARA}"
+    if [[ "$powered_by" == "none" ]]; then
+        powered_by=""
+    fi
     read -r -p "Application timezone (IANA) [UTC]: " application_timezone
     application_timezone="${application_timezone:-UTC}"
     read -r -p "SMTP host [smtp.gmail.com]: " smtp_host
@@ -49,6 +56,16 @@ configure_auth_bootstrap() {
     fi
     if [[ "$token_transport" != "bearer" && "$token_transport" != "cookie" ]]; then
         printf '%s\n' "Token transport must be bearer or cookie." >&2
+        exit 1
+    fi
+    if [[ -z "${application_name//[[:space:]]/}" ]] \
+            || (( ${#application_name} > 80 )) \
+            || [[ "$application_name" =~ [[:cntrl:]] ]]; then
+        printf '%s\n' "Application name must contain 1 to 80 printable characters." >&2
+        exit 1
+    fi
+    if (( ${#powered_by} > 80 )) || [[ "$powered_by" =~ [[:cntrl:]] ]]; then
+        printf '%s\n' "Email attribution must contain at most 80 printable characters." >&2
         exit 1
     fi
     if [[ ! "$smtp_host" =~ ^[A-Za-z0-9.-]+$ ]]; then
@@ -319,7 +336,7 @@ spring:
       mail.smtp.timeout: 5000
       mail.smtp.writetimeout: 5000
   application:
-    name: javara-postgres
+    name: \${app.name}
   lifecycle:
     timeout-per-shutdown-phase: 20s
   datasource:
@@ -340,6 +357,9 @@ spring:
       ddl-auto: none
     open-in-view: false
 app:
+  name: $(yaml_quote "$application_name")
+  branding:
+    powered-by: $(yaml_quote "$powered_by")
   time-zone: $(yaml_quote "$application_timezone")
   email:
     enabled: true

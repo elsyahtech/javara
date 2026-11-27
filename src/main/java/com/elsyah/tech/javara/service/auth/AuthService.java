@@ -8,6 +8,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -15,6 +16,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.elsyah.tech.javara.entity.auth.MfaMethod;
 import com.elsyah.tech.javara.entity.auth.RefreshTokenEntity;
 import com.elsyah.tech.javara.entity.user.UserEntity;
 import com.elsyah.tech.javara.middleware.security.JwtProperties;
@@ -22,6 +24,7 @@ import com.elsyah.tech.javara.middleware.security.SessionProperties;
 import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
 import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.request.auth.LoginRequest;
+import com.elsyah.tech.javara.response.auth.MfaChallengeResponse;
 import com.elsyah.tech.javara.service.common.ServiceResult;
 import com.elsyah.tech.javara.service.email.EmailNotificationService;
 import com.elsyah.tech.javara.service.user.UserService;
@@ -37,6 +40,7 @@ public class AuthService {
     private final JwtProperties jwtProperties;
     private final SessionProperties sessionProperties;
     private final EmailNotificationService emailNotificationService;
+    private final MfaService mfaService;
     private final Clock clock;
 
     public AuthService(
@@ -47,6 +51,7 @@ public class AuthService {
             JwtProperties jwtProperties,
             SessionProperties sessionProperties,
             EmailNotificationService emailNotificationService,
+            MfaService mfaService,
             Clock clock) {
         this.userService = userService;
         this.userRepository = userRepository;
@@ -55,6 +60,7 @@ public class AuthService {
         this.jwtProperties = jwtProperties;
         this.sessionProperties = sessionProperties;
         this.emailNotificationService = emailNotificationService;
+        this.mfaService = mfaService;
         this.clock = clock;
     }
 
@@ -73,25 +79,47 @@ public class AuthService {
                     "Invalid email or password");
         }
 
-        Instant now = clock.instant();
-        long activeSessions = refreshTokenRepository.countActiveSessions(
-                user.getId(),
-                now,
-                now.minus(sessionProperties.idleTimeout()));
-        if (activeSessions >= sessionProperties.maxConcurrentSessions()) {
-            return AuthServiceResult.failure(
-                    HttpStatus.CONFLICT,
-                    "Maximum number of active sessions reached");
+        ServiceResult<MfaChallengeResponse> mfa =
+                mfaService.beginLogin(lockedUser.get(), request.mfaMethod());
+        if (mfa.isError()) {
+            return AuthServiceResult.failure(mfa.status(), mfa.message());
         }
+        if (mfa.data() != null) {
+            return AuthServiceResult.challenge(mfa.data(), mfa.message());
+        }
+        return issueLoginTokens(lockedUser.get(), List.of("pwd"));
+    }
 
-        AuthServiceResult result = issueTokens(
-                lockedUser.get(),
-                UUID.randomUUID(),
-                now,
-                now.plus(sessionProperties.absoluteLifetime()),
-                "Login successful");
-        emailNotificationService.newSession(lockedUser.get().getEmail());
-        return result;
+    @Transactional
+    public AuthServiceResult verifyMfaOtpLogin(UUID challengeId, String code) {
+        ServiceResult<MfaLoginCompletion> verification =
+                mfaService.verifyLoginOtp(challengeId, code);
+        if (verification.isError()) {
+            return AuthServiceResult.failure(verification.status(), verification.message());
+        }
+        return completeMfaLogin(verification.data());
+    }
+
+    @Transactional
+    public AuthServiceResult verifyMfaPasskeyLogin(
+            UUID challengeId, tools.jackson.databind.JsonNode credential) {
+        ServiceResult<MfaLoginCompletion> verification =
+                mfaService.verifyLoginPasskey(challengeId, credential);
+        if (verification.isError()) {
+            return AuthServiceResult.failure(verification.status(), verification.message());
+        }
+        return completeMfaLogin(verification.data());
+    }
+
+    @Transactional
+    public AuthServiceResult completeRequiredPasskeyEnrollment(
+            UUID challengeId, String label, tools.jackson.databind.JsonNode credential) {
+        ServiceResult<MfaLoginCompletion> enrollment =
+                mfaService.completeRequiredPasskeyEnrollment(challengeId, label, credential);
+        if (enrollment.isError()) {
+            return AuthServiceResult.failure(enrollment.status(), enrollment.message());
+        }
+        return completeMfaLogin(enrollment.data());
     }
 
     @Transactional
@@ -142,6 +170,7 @@ public class AuthService {
                 token.getSessionId(),
                 token.getSessionStartedAt(),
                 token.getSessionExpiresAt(),
+                storedAuthenticationMethods(token),
                 "Token refreshed successfully");
     }
 
@@ -170,6 +199,7 @@ public class AuthService {
             UUID sessionId,
             Instant sessionStartedAt,
             Instant sessionExpiresAt,
+            List<String> authenticationMethods,
             String message) {
         String rawRefreshToken = newRefreshToken();
         Instant now = clock.instant();
@@ -180,6 +210,7 @@ public class AuthService {
         storedToken.setSessionStartedAt(sessionStartedAt);
         storedToken.setLastActivityAt(now);
         storedToken.setSessionExpiresAt(sessionExpiresAt);
+        storedToken.setAuthenticationMethods(String.join(",", authenticationMethods));
         storedToken.setCreatedAt(now);
         storedToken.setExpiresAt(min(
                 now.plus(jwtProperties.refreshTokenTtl()),
@@ -188,10 +219,56 @@ public class AuthService {
 
         return new AuthServiceResult(
                 user,
-                accessTokenService.issue(user, sessionId, sessionStartedAt),
+                accessTokenService.issue(
+                        user, sessionId, sessionStartedAt, authenticationMethods),
                 rawRefreshToken,
                 HttpStatus.OK,
                 message);
+    }
+
+    private AuthServiceResult issueLoginTokens(
+            UserEntity user, List<String> authenticationMethods) {
+        Instant now = clock.instant();
+        long activeSessions = refreshTokenRepository.countActiveSessions(
+                user.getId(),
+                now,
+                now.minus(sessionProperties.idleTimeout()));
+        if (activeSessions >= sessionProperties.maxConcurrentSessions()) {
+            return AuthServiceResult.failure(
+                    HttpStatus.CONFLICT,
+                    "Maximum number of active sessions reached");
+        }
+        AuthServiceResult result = issueTokens(
+                user,
+                UUID.randomUUID(),
+                now,
+                now.plus(sessionProperties.absoluteLifetime()),
+                authenticationMethods,
+                "Login successful");
+        emailNotificationService.newSession(user.getEmail());
+        return result;
+    }
+
+    private AuthServiceResult completeMfaLogin(MfaLoginCompletion completion) {
+        Optional<UserEntity> optionalUser =
+                userRepository.findByIdForUpdate(completion.userId());
+        if (optionalUser.isEmpty()
+                || !Boolean.TRUE.equals(optionalUser.get().getIsActive())
+                || !optionalUser.get().isEmailVerified()
+                || optionalUser.get().isPasswordResetRequired()) {
+            return AuthServiceResult.failure(
+                    HttpStatus.UNAUTHORIZED,
+                    "MFA challenge is invalid, expired, or has already been used");
+        }
+        String method = completion.method() == MfaMethod.WEBAUTHN ? "hwk" : "otp";
+        return issueLoginTokens(optionalUser.get(), List.of("pwd", method));
+    }
+
+    private static List<String> storedAuthenticationMethods(RefreshTokenEntity token) {
+        String methods = token.getAuthenticationMethods();
+        return methods == null || methods.isBlank()
+                ? List.of("pwd")
+                : List.of(methods.split(","));
     }
 
     private void revokeActiveTokens(UUID userId, Instant revokedAt) {

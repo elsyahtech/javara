@@ -12,6 +12,7 @@ import org.hibernate.exception.ConstraintViolationException;
 import java.sql.SQLException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.mock.web.MockHttpServletRequest;
 
 import com.elsyah.tech.javara.response.common.ApiResponse;
 import com.elsyah.tech.javara.exception.ApiException;
@@ -50,7 +51,8 @@ class ApiExceptionTest {
 
         ResponseEntity<ApiResponse<Void>> response = handler
                 .handleDataIntegrityViolation(
-                        new DataIntegrityViolationException("constraint violation"));
+                        new DataIntegrityViolationException("constraint violation"),
+                        request("/api/v1/users"));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
         assertThat(response.getBody()).isNotNull();
@@ -73,11 +75,41 @@ class ApiExceptionTest {
                         constraintViolation);
 
         ResponseEntity<ApiResponse<Void>> response =
-                handler.handleDataIntegrityViolation(exception);
+                handler.handleDataIntegrityViolation(exception, request("/api/v1/users"));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().getError()).isEqualTo("Email already exists");
+    }
+
+    @Test
+    void duplicatePublicRegistrationRaceReturnsGenericAcceptedResponse() {
+        ApiExceptionHandler handler = new ApiExceptionHandler();
+        ConstraintViolationException constraintViolation =
+                new ConstraintViolationException(
+                        "duplicate active email",
+                        new SQLException("duplicate key"),
+                        "idx_users_email_active_unique");
+        DataIntegrityViolationException exception =
+                new DataIntegrityViolationException(
+                        "constraint violation",
+                        constraintViolation);
+
+        ResponseEntity<ApiResponse<Void>> response =
+                handler.handleDataIntegrityViolation(
+                        exception, request("/api/v1/auth/register"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getMessage())
+                .isEqualTo(
+                        "If an account can be created with this email, verification instructions will be sent.");
+        assertThat(response.getBody().getData()).isNull();
+    }
+
+    private static MockHttpServletRequest request(String path) {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", path);
+        return request;
     }
 
     // Verifies that optimistic locking conflicts return HTTP 409.

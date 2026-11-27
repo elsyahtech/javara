@@ -79,6 +79,8 @@ postgres_port="$(read_value 'PostgreSQL port' '5432')"
 postgres_db="$(read_value 'PostgreSQL database' 'javara')"
 postgres_user="$(read_value 'PostgreSQL username' 'javara')"
 postgres_password="$(read_secret 'PostgreSQL password')"
+application_name="$(read_value 'Application name' 'JAVARA')"
+powered_by="$(read_value "Email attribution (enter 'none' to disable)" 'JAVARA')"
 redis_host="$(read_value 'Redis host' 'localhost')"
 redis_port="$(read_value 'Redis port' '6379')"
 redis_username="$(read_value 'Redis username (blank if unused)' '')"
@@ -97,6 +99,19 @@ signing_key="$(generate_signing_key)"
 validate_host "$postgres_host"
 validate_port "$postgres_port"
 validate_database_name "$postgres_db"
+if [[ -z "${application_name//[[:space:]]/}" ]] \
+        || (( ${#application_name} > 80 )) \
+        || [[ "$application_name" =~ [[:cntrl:]] ]]; then
+    printf '%s\n' "Application name must contain 1 to 80 printable characters." >&2
+    exit 1
+fi
+if (( ${#powered_by} > 80 )) || [[ "$powered_by" =~ [[:cntrl:]] ]]; then
+    printf '%s\n' "Email attribution must contain at most 80 printable characters." >&2
+    exit 1
+fi
+if [[ "$powered_by" == "none" ]]; then
+    powered_by=""
+fi
 validate_time_zone "$application_timezone"
 validate_host "$redis_host"
 validate_port "$redis_port"
@@ -173,7 +188,7 @@ spring:
       mail.smtp.timeout: 5000
       mail.smtp.writetimeout: 5000
   application:
-    name: javara-postgres
+    name: \${app.name}
   lifecycle:
     timeout-per-shutdown-phase: 20s
   datasource:
@@ -195,6 +210,9 @@ spring:
       ddl-auto: none
     open-in-view: false
 app:
+  name: $(yaml_quote "$application_name")
+  branding:
+    powered-by: $(yaml_quote "$powered_by")
   time-zone: $(yaml_quote "$application_timezone")
   email:
     enabled: true

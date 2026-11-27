@@ -22,6 +22,12 @@ import com.elsyah.tech.javara.middleware.ratelimit.SessionReauthRateLimitPropert
 })
 public class AuthRateLimitWebMvcConfiguration implements WebMvcConfigurer {
     private static final String LOGIN_PATH = "/api/v1/auth/login";
+    private static final String MFA_LOGIN_OTP_PATH =
+            "/api/v1/auth/mfa/login/otp/verify";
+    private static final String MFA_LOGIN_PASSKEY_PATH =
+            "/api/v1/auth/mfa/login/passkey/verify";
+    private static final String MFA_LOGIN_PASSKEY_ENROLL_PATH =
+            "/api/v1/auth/mfa/login/passkey/enroll";
     private static final String REGISTER_PATH = "/api/v1/auth/register";
     private static final String EMAIL_VERIFICATION_RESEND_PATH =
             "/api/v1/auth/email/verification/resend";
@@ -32,6 +38,14 @@ public class AuthRateLimitWebMvcConfiguration implements WebMvcConfigurer {
     private static final String REFRESH_PATH = "/api/v1/auth/refresh";
     private static final String PASSWORD_CHANGE_PATH = "/api/v1/auth/password/change";
     private static final String EMAIL_CHANGE_PATH = "/api/v1/auth/email/change";
+    private static final String MFA_EMAIL_ENROLL_PATH = "/api/v1/auth/mfa/email/enroll";
+    private static final String MFA_EMAIL_VERIFY_PATH = "/api/v1/auth/mfa/email/enroll/verify";
+    private static final String MFA_PASSKEY_OPTIONS_PATH =
+            "/api/v1/auth/mfa/passkeys/enroll/options";
+    private static final String MFA_PASSKEY_ENROLL_PATH =
+            "/api/v1/auth/mfa/passkeys/enroll";
+    private static final String MFA_PREFERENCE_PATH = "/api/v1/auth/mfa/preference";
+    private static final String MFA_DISABLE_PATH = "/api/v1/auth/mfa/disable";
     private static final String SESSION_TERMINATE_PATH =
             "/api/v1/auth/sessions/*/terminate";
     private static final String SESSION_TERMINATE_ALL_PATH =
@@ -69,6 +83,9 @@ public class AuthRateLimitWebMvcConfiguration implements WebMvcConfigurer {
         List<String> paths = new ArrayList<>(10);
         if (loginProperties.enabled()) {
             paths.add(LOGIN_PATH);
+            paths.add(MFA_LOGIN_OTP_PATH);
+            paths.add(MFA_LOGIN_PASSKEY_PATH);
+            paths.add(MFA_LOGIN_PASSKEY_ENROLL_PATH);
         }
         if (registerProperties.enabled()) {
             paths.add(REGISTER_PATH);
@@ -81,6 +98,12 @@ public class AuthRateLimitWebMvcConfiguration implements WebMvcConfigurer {
         if (sessionReauthProperties.enabled()) {
             paths.add(PASSWORD_CHANGE_PATH);
             paths.add(EMAIL_CHANGE_PATH);
+            paths.add(MFA_EMAIL_ENROLL_PATH);
+            paths.add(MFA_EMAIL_VERIFY_PATH);
+            paths.add(MFA_PASSKEY_OPTIONS_PATH);
+            paths.add(MFA_PASSKEY_ENROLL_PATH);
+            paths.add(MFA_PREFERENCE_PATH);
+            paths.add(MFA_DISABLE_PATH);
             paths.add(SESSION_TERMINATE_PATH);
             paths.add(SESSION_TERMINATE_ALL_PATH);
             paths.add(ADMIN_SESSION_TERMINATE_PATH);

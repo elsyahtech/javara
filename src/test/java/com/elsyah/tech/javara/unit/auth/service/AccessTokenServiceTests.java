@@ -10,6 +10,7 @@ import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -53,6 +54,7 @@ class AccessTokenServiceTests {
                 ((Number) decoded.getClaim("auth_time")).longValue());
         assertEquals("user@example.com", decoded.getClaimAsString("email"));
         assertEquals("ADMIN", decoded.getClaimAsStringList("roles").get(0));
+        assertEquals(List.of("pwd"), decoded.getClaimAsStringList("amr"));
         assertTrue(Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt())
                 .compareTo(Duration.ofMinutes(15)) <= 0);
     }

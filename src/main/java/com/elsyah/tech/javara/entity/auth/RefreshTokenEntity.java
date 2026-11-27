@@ -30,6 +30,9 @@ public class RefreshTokenEntity {
     @Column(name = "session_expires_at", nullable = false, updatable = false)
     private Instant sessionExpiresAt;
 
+    @Column(name = "authentication_methods", nullable = false, length = 100)
+    private String authenticationMethods = "pwd";
+
     @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
 
@@ -56,6 +59,11 @@ public class RefreshTokenEntity {
 
     public Instant getSessionExpiresAt() { return sessionExpiresAt; }
     public void setSessionExpiresAt(Instant sessionExpiresAt) { this.sessionExpiresAt = sessionExpiresAt; }
+
+    public String getAuthenticationMethods() { return authenticationMethods; }
+    public void setAuthenticationMethods(String authenticationMethods) {
+        this.authenticationMethods = authenticationMethods;
+    }
 
     public Instant getExpiresAt() { return expiresAt; }
     public void setExpiresAt(Instant expiresAt) { this.expiresAt = expiresAt; }

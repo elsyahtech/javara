@@ -9,6 +9,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
+import com.elsyah.tech.javara.middleware.config.ApplicationBrandingProperties;
+import com.elsyah.tech.javara.middleware.config.ApplicationIdentityProperties;
 import com.elsyah.tech.javara.middleware.email.EmailSettings;
 
 @Service
@@ -18,12 +20,18 @@ public class EmailNotificationService {
 
     private final EmailSettings settings;
     private final ApplicationEventPublisher eventPublisher;
+    private final ApplicationIdentityProperties applicationIdentity;
+    private final ApplicationBrandingProperties branding;
 
     public EmailNotificationService(
             EmailSettings settings,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            ApplicationIdentityProperties applicationIdentity,
+            ApplicationBrandingProperties branding) {
         this.settings = settings;
         this.eventPublisher = eventPublisher;
+        this.applicationIdentity = applicationIdentity;
+        this.branding = branding;
     }
 
     public boolean isEnabled() {
@@ -35,8 +43,9 @@ public class EmailNotificationService {
                 EmailEventType.REGISTRATION_VERIFICATION,
                 recipient,
                 rawToken,
-                "Verify your JAVARA email address",
-                "Verify your email address to activate your JAVARA account:");
+                "Verify your " + applicationIdentity.name() + " email address",
+                "Verify your email address to activate your "
+                        + applicationIdentity.name() + " account:");
     }
 
     public void emailChangeVerification(String recipient, String rawToken) {
@@ -44,16 +53,18 @@ public class EmailNotificationService {
                 EmailEventType.EMAIL_CHANGE_VERIFICATION,
                 recipient,
                 rawToken,
-                "Confirm your JAVARA email change",
-                "Confirm this email address to complete your JAVARA email change:");
+                "Confirm your " + applicationIdentity.name() + " email change",
+                "Confirm this email address to complete your "
+                        + applicationIdentity.name() + " email change:");
     }
 
     public void passwordChanged(String recipient) {
         publish(
                 EmailEventType.PASSWORD_CHANGED,
                 recipient,
-                "JAVARA password changed",
-                "Your JAVARA password was changed. If you did not make this change, "
+                applicationIdentity.name() + " password changed",
+                "Your " + applicationIdentity.name()
+                        + " password was changed. If you did not make this change, "
                         + "contact your administrator immediately.");
     }
 
@@ -67,11 +78,13 @@ public class EmailNotificationService {
                 ? EmailEventType.PASSWORD_RESET_SUPPORT_AUTHORIZED
                 : EmailEventType.PASSWORD_RESET_REQUESTED;
         String subject = supportAuthorized
-                ? "JAVARA account recovery authorized"
-                : "Reset your JAVARA password";
+                ? applicationIdentity.name() + " account recovery authorized"
+                : "Reset your " + applicationIdentity.name() + " password";
         String message = supportAuthorized
-                ? "Support has authorized recovery for your JAVARA account."
-                : "A password reset was requested for your JAVARA account.";
+                ? "Support has authorized recovery for your "
+                        + applicationIdentity.name() + " account."
+                : "A password reset was requested for your "
+                        + applicationIdentity.name() + " account.";
         publish(
                 type,
                 recipient,
@@ -85,8 +98,9 @@ public class EmailNotificationService {
         publish(
                 EmailEventType.EMERGENCY_PASSWORD_RESET,
                 recipient,
-                "JAVARA security alert: password reset",
-                "JAVARA has invalidated your password and terminated all active sessions. "
+                applicationIdentity.name() + " security alert: password reset",
+                applicationIdentity.name()
+                        + " has invalidated your password and terminated all active sessions. "
                         + "Sign-in is blocked until support verifies your identity and "
                         + "authorizes account recovery.\n\n"
                         + "Message from your administrator:\n"
@@ -99,8 +113,9 @@ public class EmailNotificationService {
         publish(
                 EmailEventType.EMAIL_CHANGED,
                 recipient,
-                "JAVARA email address changed",
-                "Your JAVARA account email address was changed. If you did not make this "
+                applicationIdentity.name() + " email address changed",
+                "Your " + applicationIdentity.name()
+                        + " account email address was changed. If you did not make this "
                         + "change, contact your administrator immediately.");
     }
 
@@ -108,9 +123,25 @@ public class EmailNotificationService {
         publish(
                 EmailEventType.NEW_SESSION,
                 recipient,
-                "New JAVARA sign-in",
-                "A new JAVARA session was created for your account. If you did not sign in, "
+                "New " + applicationIdentity.name() + " sign-in",
+                "A new " + applicationIdentity.name()
+                        + " session was created for your account. If you did not sign in, "
                         + "change your password and contact your administrator.");
+    }
+
+    public void mfaOneTimeCode(String recipient, String code, Duration tokenTtl) {
+        publish(
+                EmailEventType.MFA_ONE_TIME_CODE,
+                recipient,
+                "Your " + applicationIdentity.name() + " verification code",
+                "Use this one-time code to complete sign-in or MFA setup: "
+                        + code
+                        + "\n\nThe code expires in "
+                        + tokenTtl
+                        + ". No one from " + applicationIdentity.name()
+                        + " will ever ask you to share this code. Do not share it with anyone, "
+                        + "including anyone claiming to be support. If you did not request this code, "
+                        + "you can ignore this message.");
     }
 
     private void verification(
@@ -138,6 +169,10 @@ public class EmailNotificationService {
             LOGGER.warn("Email event {} was not queued because email delivery is disabled", type);
             return;
         }
-        eventPublisher.publishEvent(new EmailMessageEvent(type, recipient, subject, body));
+        String attribution = branding.poweredBy().isBlank()
+                ? ""
+                : "\n\nPowered by " + branding.poweredBy();
+        eventPublisher.publishEvent(
+                new EmailMessageEvent(type, recipient, subject, body + attribution));
     }
 }

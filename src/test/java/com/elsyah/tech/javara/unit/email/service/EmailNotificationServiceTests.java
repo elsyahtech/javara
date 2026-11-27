@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
 
+import com.elsyah.tech.javara.middleware.config.ApplicationBrandingProperties;
+import com.elsyah.tech.javara.middleware.config.ApplicationIdentityProperties;
 import com.elsyah.tech.javara.middleware.email.EmailSettings;
 import com.elsyah.tech.javara.service.email.EmailEventType;
 import com.elsyah.tech.javara.service.email.EmailMessageEvent;
@@ -31,8 +33,12 @@ class EmailNotificationServiceTests {
         org.junit.jupiter.api.Assertions.assertEquals(
                 EmailEventType.REGISTRATION_VERIFICATION, event.type());
         org.junit.jupiter.api.Assertions.assertEquals("person@example.com", event.recipient());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "Verify your Test Suite App email address", event.subject());
         org.junit.jupiter.api.Assertions.assertTrue(event.body().contains(
                 "https://javara.example.com/api/v1/auth/email/verify?token=opaque-token"));
+        org.junit.jupiter.api.Assertions.assertTrue(event.body().contains("Powered by JAVARA"));
+        org.junit.jupiter.api.Assertions.assertTrue(event.body().contains("Test Suite App account"));
     }
 
     @Test
@@ -47,6 +53,28 @@ class EmailNotificationServiceTests {
         verify(publisher).publishEvent(eventCaptor.capture());
         org.junit.jupiter.api.Assertions.assertEquals(
                 EmailEventType.NEW_SESSION, eventCaptor.getValue().type());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "New Test Suite App sign-in", eventCaptor.getValue().subject());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                eventCaptor.getValue().body().contains("Test Suite App session"));
+    }
+
+    @Test
+    void otpEmailWarnsUsersNeverToShareTheirCode() {
+        ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
+        EmailNotificationService service = service(true, publisher);
+
+        service.mfaOneTimeCode("person@example.com", "12345678", Duration.ofMinutes(5));
+
+        ArgumentCaptor<EmailMessageEvent> eventCaptor =
+                ArgumentCaptor.forClass(EmailMessageEvent.class);
+        verify(publisher).publishEvent(eventCaptor.capture());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                eventCaptor.getValue().body().contains(
+                        "No one from Test Suite App will ever ask you to share this code."));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                eventCaptor.getValue().body().contains(
+                        "Do not share it with anyone, including anyone claiming to be support."));
     }
 
     @Test
@@ -67,6 +95,8 @@ class EmailNotificationServiceTests {
                         Duration.ofHours(24),
                         "notify@example.com",
                         "https://javara.example.com"),
-                publisher);
+                publisher,
+                new ApplicationIdentityProperties("Test Suite App"),
+                new ApplicationBrandingProperties("JAVARA"));
     }
 }

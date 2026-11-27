@@ -11,10 +11,10 @@ penetration test, certification, or production-readiness claim.
 - Initial assessment documentation checkout: `0a1c7108a4b5ba74cbb2c99eb36d943464b75381`;
   changes from the source baseline at that point were assessment
   documentation only.
-- Current review date: 2026-11-26. Remediation evidence below reflects commit
+- Current review date: 2026-11-27. Remediation evidence below reflects commit
   `b009b8a` and local manual tests, not an independent reassessment.
-- Initial baseline: 21 requirements marked `Fail`. Current disposition: 8
-  `Fail`, 15 `Pending` retest/evidence, and 324 `Not assessed`.
+- Initial baseline: 21 requirements marked `Fail`. Current disposition: 5
+  `Fail`, 16 `Pending` retest/evidence, and 324 `Not assessed`.
 - No requirement is marked `Pass` or excluded.
 
 The historical findings below are confirmed for the pinned baseline. Current
@@ -143,6 +143,37 @@ observed:
   addresses and the confirmation link are omitted.
 - A new-session notification email was received during local login testing.
 - The password-change security notification email was also received locally.
+- On 2026-11-27, the user enrolled `EMAIL_OTP` from an authenticated session.
+  The enrollment email was received with a five-minute code, and verification
+  returned `200` with Email OTP enabled and preferred. As designed, enrollment
+  revoked the active sessions: a subsequent sessions request with the old
+  access token returned `401`. A new login selecting `EMAIL_OTP` returned
+  `202` with a challenge and sent another code. OTP verification succeeded and
+  returned access/refresh tokens; `GET /api/v1/auth/sessions` with the new
+  access token returned `200` and listed the new session as current. OTP values,
+  tokens, challenge IDs, session IDs, and recipient addresses are omitted.
+  Replaying the same OTP verification after successful completion returned
+  `401` with the generic `"MFA challenge is invalid, expired, or has already
+  been used"` response, confirming that the challenge cannot be reused.
+  A security-awareness sentence telling recipients never to share the code,
+  including with anyone claiming to be support, was added afterward and is
+  covered by a focused notification unit test. On a subsequent local check,
+  the OTP email was received with this updated warning and the configured
+  “Powered by Javara Starter” attribution. The OTP value is omitted.
+- After that MFA login, logout succeeded. A subsequent
+  `GET /api/v1/auth/sessions` using the same access token returned `401`,
+  confirming locally that logout invalidated this MFA-created session.
+- In a public-registration retest, a new address received the generic `202`
+  response and verification email. Login before verification returned the
+  generic `401`; following the verification link returned `200`, and reusing
+  the consumed link returned `400`. After verification, login requesting
+  `EMAIL_OTP` on an account without an enrolled factor returned `400`;
+  ordinary login succeeded. Submitting registration again for the same
+  verified address returned the same generic `202` response and did not send
+  another verification email. This confirms the duplicate-registration
+  response does not claim that a new account was created; response-equivalence
+  is also covered by an integration test. Tokens, links, addresses, and
+  credentials are omitted.
 - In a local SMTP-failure simulation using an unavailable loopback endpoint,
   login still succeeded and the listener logged the `NEW_SESSION` event type
   and `MailSendException` class without logging the message contents. This
@@ -261,10 +292,12 @@ The configured password-data files are illustrative samples, not approved
 production datasets; provenance, licensing, freshness, coverage, and
 large-corpus performance remain open. Password-change email delivery has been
 confirmed locally, but there is no durable outbox.
-Context-specific password-word checks, phishing-resistant MFA, suspicious
-authentication detection, and duplicate-registration anti-enumeration remain
-open. User-initiated password recovery and administrator emergency
-randomization are implemented. Emergency randomization invalidates the
+Context-specific password-word checks, production-verified phishing-resistant
+MFA, sensitive-operation step-up, and suspicious-authentication detection
+remain open. Public registration now uses a generic response to reduce
+account-enumeration risk; local retesting remains pending. User-initiated
+password recovery and administrator emergency randomization are implemented.
+Emergency randomization invalidates the
 credential, revokes sessions, locks sign-in, and sends an administrator-authored
 notice; after out-of-band support verification, the user receives a one-time
 link and chooses a new password. Automated integration coverage exists; local
@@ -285,10 +318,10 @@ Only `Pass` can indicate a verified requirement; none is claimed here.
 | AUTH-02 | V6.2.3 | The baseline self-service `PUT /api/v1/users/{id}` accepted a password without current-password re-authentication. | `Pending` — dedicated authenticated password-change endpoint requires the current password and revokes sessions; regression tests and local change were successful. Retest against the complete requirement. |
 | AUTH-03 | V6.2.4 | The baseline had no disallowed-password dataset check. | `Pending` — policy is applied at registration, password change, and bootstrap; production requires at least 3,000 entries. Only illustrative local data is present, so approved dataset evidence is outstanding. |
 | AUTH-04 | V6.2.12 | The baseline had no breached-password check in password creation or update. | `Pending` — offline hash lookup is implemented and tested; the sample hash file is not a production breach corpus. Source, license, coverage, freshness, and production deployment evidence are outstanding. |
-| AUTH-05 | V6.3.3 | The production guide explicitly lists multi-factor authentication as unavailable. Level 3 requires a phishing-resistant hardware-based factor unless an accepted rationale and comprehensive mitigations apply. See [production boundaries](../../guide/production-and-adoption.md). | `Fail` — phishing-resistant MFA/WebAuthn is not implemented. |
+| AUTH-05 | V6.3.3 | The initial production guide listed multi-factor authentication as unavailable. Level 3 requires a phishing-resistant hardware-based factor unless an accepted rationale and comprehensive mitigations apply. See [production boundaries](../../guide/production-and-adoption.md). | `Fail` — login supports WebAuthn passkeys and email OTP, but MFA is optional by default, email OTP is not phishing-resistant, and no production authenticator or WebAuthn-only policy has been independently verified. |
 | AUTH-06 | V6.3.5 | No mechanism was found to detect and notify users of suspicious successful or unsuccessful authentication attempts. | `Fail` — new-session notices alone do not provide suspicious-authentication detection and response. |
 | AUTH-07 | V6.3.7 | The baseline had no notification flow for authentication-detail changes. | `Pending` — verification, email-change, new-session, and password-change messages were received locally; emergency-reset and recovery email paths have automated coverage. An SMTP failure was caught and logged without message contents. Durable retry/outbox and production operational evidence remain outstanding. |
-| AUTH-08 | V6.3.8 | Login uses a generic invalid-credentials message, but duplicate public registration returns HTTP 409 and `"Email already exists"`. | `Fail` — duplicate registration still reveals whether an email is registered; resend has a generic response but does not remediate registration enumeration. |
+| AUTH-08 | V6.3.8 | Login uses a generic invalid-credentials message, but duplicate public registration returned HTTP 409 and `"Email already exists"`. | `Pending` — public registration now returns the same generic `202` response for new and existing addresses, including database uniqueness races. Automated response-equivalence checks and local retest passed; complete requirement-specific review, including timing considerations, remains. |
 | AUTH-09 | V6.4.3 | Users can request password recovery through a generic-response endpoint; reset tokens go only to the verified email address and users choose their own new password. | `Pending` — hashed single-use tokens, expiry, password policy enforcement, and session revocation are implemented. Local recovery succeeded with a new password; the previously invalidated password was rejected without consuming the recovery link. Requirement-specific recovery review remains. |
 | AUTH-10 | V6.4.6 | Administrators can trigger emergency credential randomization but cannot see or choose the generated credential. The action revokes sessions and blocks login until support verifies the user and authorizes user-controlled recovery. | `Pending` — automated tests and local manual checks cover emergency randomization, notice delivery, rejection of the pre-reset session and password, administrator-authorized recovery, rejection of the invalidated password, and successful user-set recovery. SMTP-failure recovery and requirement-specific review remain. |
 
@@ -305,12 +338,12 @@ Only `Pass` can indicate a verified requirement; none is claimed here.
 | SES-07 | V7.4.5 | The baseline had no administrator endpoint to terminate another user's sessions. | `Pending` — local admin-initiated termination returned `200` for one session, and the target's pre-termination access token then received `401`. Audit-trail and complete requirement-specific review remain outstanding. |
 | SES-08 | V7.5.1 | The baseline allowed email updates without re-authentication or new-address verification. | `Pending` — self-service email change requires the current password and confirmation of the new address; local confirmation and login with the new address succeeded. |
 | SES-09 | V7.5.2 | The baseline had no user session listing or individual/all-session termination endpoints. | `Pending` — listing, current-session logout, targeted termination of another session, and all-session termination were verified locally. The complete ASVS requirement still needs review. |
-| SES-10 | V7.5.3 | Sensitive changes lacked a verified step-up or secondary factor. | `Fail` — current-password checks and email confirmation exist, but phishing-resistant MFA/step-up required for the target Level 3 assessment is not implemented. |
+| SES-10 | V7.5.3 | Sensitive changes lacked a verified step-up or secondary factor. | `Fail` — MFA is enforced only in the login flow; sensitive operations do not yet require step-up verification. |
 
 ## Remaining work
 
 These dispositions cover only the 21 requirements identified during the
-initial V6/V7 review. The current matrix has 6 `Fail`, 15 `Pending`, and 324
+initial V6/V7 review. The current matrix has 5 `Fail`, 16 `Pending`, and 324
 `Not assessed`; no requirement is `Pass`. Other V6/V7 requirements and every
 other ASVS chapter still require assessment. Deployed rate limits, notification
 delivery, operational controls, performance, and customer/production evidence
@@ -330,9 +363,10 @@ Recommended next steps are:
    password-change notifications were verified.
 3. Select and supply approved password datasets with documented provenance,
    license, freshness, coverage, and production deployment evidence.
-4. Address the confirmed gaps: context-specific password words, phishing-
-   resistant MFA/step-up, suspicious-authentication detection, and registration
-   anti-enumeration. Locally verify user-initiated recovery, emergency
-   randomization, support authorization, and recovery after SMTP failure.
+4. Address the confirmed gaps: context-specific password words, production
+   verification and enforcement of phishing-resistant MFA, sensitive-operation
+   step-up, and suspicious-authentication detection. Locally retest generic
+   registration responses, user-initiated recovery, emergency randomization,
+   support authorization, and recovery after SMTP failure.
 5. Continue requirement-by-requirement V6/V7 review, then assess all remaining
    ASVS chapters and the multi-tenant and deployment/operations workstreams.

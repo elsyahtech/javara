@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
+import com.elsyah.tech.javara.middleware.config.ApplicationIdentityConfiguration;
 import com.elsyah.tech.javara.middleware.security.PasswordPolicyConfiguration;
 import com.elsyah.tech.javara.service.user.PasswordPolicyService;
 
@@ -18,7 +19,9 @@ class PasswordPolicyConfigurationTests {
     Path tempDir;
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-            .withUserConfiguration(PasswordPolicyConfiguration.class);
+            .withUserConfiguration(
+                    PasswordPolicyConfiguration.class,
+                    ApplicationIdentityConfiguration.class);
 
     @Test
     void startupFailsWithActionableMessageWhenRequiredFilesAreMissing() {

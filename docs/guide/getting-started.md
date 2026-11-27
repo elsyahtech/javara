@@ -79,7 +79,9 @@ make setup
 ```
 
 The setup asks for the connection details, initial ADMIN account, token
-transport, and application timezone (IANA; default `UTC`). It generates a JWT
+transport, application name (default `JAVARA`), email attribution
+(default `JAVARA`), and application timezone (IANA; default `UTC`). Enter
+`none` to omit the email's “Powered by” attribution. It generates a JWT
 signing key, checks whether the service ports are reachable when `nc` is
 installed, and writes `config/application.yml`.
 It also seeds the same local-only illustrative password-policy files when they

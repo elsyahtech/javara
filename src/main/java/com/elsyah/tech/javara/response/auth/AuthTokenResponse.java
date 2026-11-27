@@ -9,4 +9,14 @@ public record AuthTokenResponse(
         String refreshToken,
         String tokenType,
         Long expiresIn,
-        UserResponse user) {}
+        UserResponse user,
+        MfaChallengeResponse mfaChallenge) {
+    public AuthTokenResponse(
+            String accessToken,
+            String refreshToken,
+            String tokenType,
+            Long expiresIn,
+            UserResponse user) {
+        this(accessToken, refreshToken, tokenType, expiresIn, user, null);
+    }
+}

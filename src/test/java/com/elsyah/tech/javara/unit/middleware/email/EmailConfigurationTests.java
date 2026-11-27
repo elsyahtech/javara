@@ -5,18 +5,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
+import com.elsyah.tech.javara.middleware.config.ApplicationIdentityConfiguration;
 import com.elsyah.tech.javara.middleware.email.EmailConfiguration;
 import com.elsyah.tech.javara.middleware.email.EmailSettings;
 
 class EmailConfigurationTests {
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-            .withUserConfiguration(EmailConfiguration.class);
+            .withUserConfiguration(
+                    EmailConfiguration.class,
+                    ApplicationIdentityConfiguration.class);
 
     @Test
     void createsProviderNeutralSettingsFromSmtpConfiguration() {
         contextRunner
                 .withPropertyValues(
                         "app.email.enabled=true",
+                        "app.name=Configured Mail App",
                         "app.email.public-base-url=https://javara.example.com",
                         "spring.mail.host=smtp.example.com",
                         "spring.mail.username=notify@example.com",
@@ -34,12 +38,15 @@ class EmailConfigurationTests {
     @Test
     void failsClearlyWhenEmailIsEnabledWithoutSmtpHost() {
         contextRunner
-                .withPropertyValues("app.email.enabled=true")
+                .withPropertyValues(
+                        "app.email.enabled=true",
+                        "app.name=Configured Mail App")
                 .run(context -> {
                     assertThat(context).hasFailed();
                     assertThat(rootCauseMessage(context.getStartupFailure()))
                             .contains("Email delivery is enabled")
-                            .contains("spring.mail.host");
+                            .contains("spring.mail.host")
+                            .contains("Configured Mail App");
                 });
     }
 

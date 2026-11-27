@@ -21,6 +21,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Base64;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -29,6 +30,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpStatus;
 
 import com.elsyah.tech.javara.entity.auth.RefreshTokenEntity;
+import com.elsyah.tech.javara.entity.auth.MfaMethod;
 import com.elsyah.tech.javara.entity.user.UserEntity;
 import com.elsyah.tech.javara.middleware.security.JwtProperties;
 import com.elsyah.tech.javara.middleware.security.SessionProperties;
@@ -39,8 +41,11 @@ import com.elsyah.tech.javara.request.auth.LoginRequest;
 import com.elsyah.tech.javara.service.auth.AccessTokenService;
 import com.elsyah.tech.javara.service.auth.AuthService;
 import com.elsyah.tech.javara.service.auth.AuthServiceResult;
+import com.elsyah.tech.javara.service.auth.MfaService;
+import com.elsyah.tech.javara.service.auth.MfaLoginCompletion;
 import com.elsyah.tech.javara.service.common.ServiceResult;
 import com.elsyah.tech.javara.service.email.EmailNotificationService;
+import com.elsyah.tech.javara.response.auth.MfaChallengeResponse;
 import com.elsyah.tech.javara.service.user.UserService;
 
 class AuthServiceTests {
@@ -61,7 +66,10 @@ class AuthServiceTests {
                 new ServiceResult<>(user, HttpStatus.OK, "Login successful"));
         when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
         when(accessTokenService.issue(
-                        any(UserEntity.class), any(UUID.class), any(Instant.class)))
+                        any(UserEntity.class),
+                        any(UUID.class),
+                        any(Instant.class),
+                        any()))
                 .thenReturn("access-token");
 
         AuthServiceResult result = service.login(request);
@@ -110,6 +118,74 @@ class AuthServiceTests {
         verifyNoInteractions(accessTokenService);
     }
 
+    @Test
+    void loginReturnsMfaChallengeWithoutIssuingTokens() {
+        UserService userService = mock(UserService.class);
+        UserRepository userRepository = mock(UserRepository.class);
+        RefreshTokenRepository refreshRepository = mock(RefreshTokenRepository.class);
+        AccessTokenService accessTokenService = mock(AccessTokenService.class);
+        MfaService mfaService = mock(MfaService.class);
+        AuthService service = service(
+                userService, userRepository, refreshRepository, accessTokenService, mfaService);
+        UserEntity user = user(uuid("mfa-user"));
+        UUID challengeId = uuid("mfa-challenge");
+        MfaChallengeResponse challenge = new MfaChallengeResponse(
+                challengeId,
+                MfaMethod.EMAIL_OTP,
+                List.of(MfaMethod.EMAIL_OTP),
+                "VERIFY",
+                null,
+                NOW.plus(Duration.ofMinutes(5)));
+        LoginRequest request = new LoginRequest("user@example.com", "password123");
+        when(userService.login(request)).thenReturn(
+                new ServiceResult<>(user, HttpStatus.OK, "Login successful"));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+        when(mfaService.beginLogin(user, null)).thenReturn(
+                new ServiceResult<>(challenge, HttpStatus.ACCEPTED, "MFA verification code sent"));
+
+        AuthServiceResult result = service.login(request);
+
+        assertEquals(HttpStatus.ACCEPTED, result.status());
+        assertEquals(challenge, result.mfaChallenge());
+        assertNull(result.accessToken());
+        assertNull(result.refreshToken());
+        verify(refreshRepository, never()).save(any());
+        verifyNoInteractions(accessTokenService);
+    }
+
+    @Test
+    void successfulMfaVerificationIssuesTokensWithAuthenticationMethodClaim() {
+        UserService userService = mock(UserService.class);
+        UserRepository userRepository = mock(UserRepository.class);
+        RefreshTokenRepository refreshRepository = mock(RefreshTokenRepository.class);
+        AccessTokenService accessTokenService = mock(AccessTokenService.class);
+        MfaService mfaService = mock(MfaService.class);
+        AuthService service = service(
+                userService, userRepository, refreshRepository, accessTokenService, mfaService);
+        UserEntity user = user(uuid("mfa-user"));
+        UUID challengeId = uuid("mfa-challenge");
+        when(mfaService.verifyLoginOtp(challengeId, "12345678")).thenReturn(
+                new ServiceResult<>(
+                        new MfaLoginCompletion(user.getId(), MfaMethod.EMAIL_OTP),
+                        HttpStatus.OK,
+                        "MFA verification successful"));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+        when(accessTokenService.issue(
+                        org.mockito.ArgumentMatchers.eq(user),
+                        any(UUID.class),
+                        any(Instant.class),
+                        org.mockito.ArgumentMatchers.eq(List.of("pwd", "otp"))))
+                .thenReturn("mfa-access-token");
+
+        AuthServiceResult result = service.verifyMfaOtpLogin(challengeId, "12345678");
+
+        ArgumentCaptor<RefreshTokenEntity> tokenCaptor = forClass(RefreshTokenEntity.class);
+        verify(refreshRepository).save(tokenCaptor.capture());
+        assertEquals(HttpStatus.OK, result.status());
+        assertEquals("mfa-access-token", result.accessToken());
+        assertEquals("pwd,otp", tokenCaptor.getValue().getAuthenticationMethods());
+    }
+
     // Verifies that a valid refresh token is revoked and replaced with a new token.
     @Test
     void refreshRotatesTokenAndIssuesANewAccessToken() {
@@ -120,6 +196,7 @@ class AuthServiceTests {
         AuthService service = service(
                 userService, userRepository, refreshRepository, accessTokenService);
         RefreshTokenEntity oldToken = storedToken(uuid("user-1"), "old-refresh-token");
+        oldToken.setAuthenticationMethods("pwd,otp");
         UserEntity user = user(uuid("user-1"));
         when(refreshRepository.findUserIdByTokenHash(hash("old-refresh-token")))
                 .thenReturn(Optional.of(uuid("user-1")));
@@ -129,7 +206,8 @@ class AuthServiceTests {
         when(accessTokenService.issue(
                         user,
                         oldToken.getSessionId(),
-                        oldToken.getSessionStartedAt()))
+                        oldToken.getSessionStartedAt(),
+                        List.of("pwd", "otp")))
                 .thenReturn("new-access-token");
 
         AuthServiceResult result = service.refresh("old-refresh-token");
@@ -143,6 +221,7 @@ class AuthServiceTests {
         assertEquals(hash(result.refreshToken()), tokenCaptor.getValue().getTokenHash());
         assertEquals(oldToken.getSessionId(), tokenCaptor.getValue().getSessionId());
         assertEquals(oldToken.getSessionExpiresAt(), tokenCaptor.getValue().getSessionExpiresAt());
+        assertEquals("pwd,otp", tokenCaptor.getValue().getAuthenticationMethods());
     }
 
     @Test
@@ -268,6 +347,15 @@ class AuthServiceTests {
             UserRepository userRepository,
             RefreshTokenRepository refreshRepository,
             AccessTokenService accessTokenService) {
+        return service(userService, userRepository, refreshRepository, accessTokenService, mfaService());
+    }
+
+    private static AuthService service(
+            UserService userService,
+            UserRepository userRepository,
+            RefreshTokenRepository refreshRepository,
+            AccessTokenService accessTokenService,
+            MfaService mfaService) {
         return new AuthService(
                 userService,
                 userRepository,
@@ -284,7 +372,15 @@ class AuthServiceTests {
                         "REFRESH_TOKEN"),
                 new SessionProperties(null, null, null),
                 mock(EmailNotificationService.class),
+                mfaService,
                 Clock.fixed(NOW, ZoneOffset.UTC));
+    }
+
+    private static MfaService mfaService() {
+        MfaService service = mock(MfaService.class);
+        when(service.beginLogin(any(UserEntity.class), org.mockito.ArgumentMatchers.isNull())).thenReturn(
+                new ServiceResult<>(null, HttpStatus.OK, "MFA is not enabled"));
+        return service;
     }
 
     private static UserEntity user(UUID id) {

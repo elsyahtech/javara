@@ -15,6 +15,28 @@ APP_TIME_ZONE=Asia/Jakarta
 SPRING_DATA_REDIS_HOST=localhost
 ```
 
+## Application identity and email attribution
+
+Set `app.name` to the product or service name shown in operational startup
+messages, email subjects and bodies, browser page titles, and the WebAuthn
+relying-party label. `make setup` and `make install` ask for this name and use
+`JAVARA` if no other name is supplied.
+
+```yaml
+spring:
+  application:
+    name: ${app.name}
+app:
+  name: Customer Portal
+  branding:
+    powered-by: JAVARA
+```
+
+`app.branding.powered-by` adds a separate “Powered by …” line to notification
+emails. It defaults to `JAVARA`; enter `none` during setup or set this property
+to an empty string to omit that attribution. JAVARA's internal package,
+database, and configuration identifiers are not renamed.
+
 ## Application timezone
 
 Set `app.time-zone` to a Java/IANA timezone ID, for example
@@ -159,6 +181,59 @@ does not use user refresh tokens.
 Refresh tokens rotate on refresh. The client must replace the old refresh
 token with the newly returned one. Password changes revoke active refresh
 tokens; already-issued access tokens remain valid until their short expiry.
+
+## Multi-factor authentication
+
+MFA is enabled but optional by default. JAVARA currently supports email
+one-time codes and WebAuthn passkeys. The deployment-wide `allowed-methods`
+setting limits which factors users can enroll or select at login; there is no
+tenant-specific policy model.
+
+```yaml
+app:
+  security:
+    mfa:
+      enabled: true
+      required: false
+      default-method: EMAIL_OTP
+      allowed-methods:
+        - EMAIL_OTP
+        - WEBAUTHN
+      challenge-ttl: 5m
+      max-attempts: 5
+      relying-party-id: auth.example.com
+      allowed-origins:
+        - https://app.example.com
+```
+
+Set `required: true` to require MFA for all accounts. Accounts without an
+enrolled factor must enroll the configured default factor during their next
+login before tokens are issued. Set `allowed-methods` to only `WEBAUTHN` and
+`default-method: WEBAUTHN` when deployment policy requires passkeys. WebAuthn
+requires the correct relying-party ID and exact browser origins; production,
+staging, and `prod` profiles reject `localhost` relying-party IDs and
+non-HTTPS origins. Use HTTPS for deployed applications.
+
+After password verification, login returns `202 Accepted` with
+`data.mfaChallenge` and does not issue access or refresh tokens. Clients may
+send the optional `mfaMethod` field in the login JSON to select an enrolled,
+deployment-allowed method; otherwise JAVARA uses the account's preferred
+method (or the configured default for required enrollment). Complete the
+challenge through the login MFA verification endpoint to receive tokens.
+Access tokens record `amr` values (`pwd` plus `otp` for email, or `hwk` for
+WebAuthn), and refresh rotation preserves them.
+
+Authenticated users can inspect policy and enrolled factors at
+`GET /api/v1/auth/mfa`. Enrollment, preference, and disable endpoints require
+the current password where applicable. Enabling or changing a factor revokes
+active sessions. Required policy prevents disabling the last enrolled factor.
+
+SMS and WhatsApp enum values are reserved for future provider integrations;
+there is currently no phone-number model or delivery provider. The application
+fails at startup if either method is listed as allowed without a provider.
+Email OTP is not phishing-resistant and does not, by itself, satisfy an ASVS
+Level 3 phishing-resistant MFA requirement. MFA is a login control today; it
+does not yet provide step-up verification for sensitive operations.
 
 ## Authentication rate limits
 

@@ -16,6 +16,7 @@ import org.mockito.ArgumentCaptor;
 
 import com.elsyah.tech.javara.entity.user.UserEntity;
 import com.elsyah.tech.javara.entity.user.UserRole;
+import com.elsyah.tech.javara.middleware.config.ApplicationIdentityProperties;
 import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.service.user.BootstrapAdminService;
 import com.elsyah.tech.javara.service.user.PasswordPolicyService;
@@ -35,7 +36,11 @@ class BootstrapAdminServiceTests {
         PasswordHashService passwordHashService = new PasswordHashService("ARGON2");
         when(repository.findByEmail("admin@example.com")).thenReturn(Optional.empty());
 
-        new BootstrapAdminService(repository, passwordHashService, allowedPasswordPolicy())
+        new BootstrapAdminService(
+                        repository,
+                        passwordHashService,
+                        allowedPasswordPolicy(),
+                        applicationIdentity())
                 .createInitialAdmin("admin@example.com", "admin-password");
 
         ArgumentCaptor<UserEntity> userCaptor = forClass(UserEntity.class);
@@ -60,7 +65,8 @@ class BootstrapAdminServiceTests {
                 () -> new BootstrapAdminService(
                                 repository,
                                 new PasswordHashService("ARGON2"),
-                                allowedPasswordPolicy())
+                                allowedPasswordPolicy(),
+                                applicationIdentity())
                         .createInitialAdmin("user@example.com", "admin-password"));
         verify(repository, never()).saveAndFlush(existing);
     }
@@ -76,7 +82,8 @@ class BootstrapAdminServiceTests {
         new BootstrapAdminService(
                         repository,
                         new PasswordHashService("ARGON2"),
-                        allowedPasswordPolicy())
+                        allowedPasswordPolicy(),
+                        applicationIdentity())
                 .createInitialAdmin("admin@example.com", "admin-password");
 
         verify(repository, never()).saveAndFlush(existing);
@@ -92,9 +99,16 @@ class BootstrapAdminServiceTests {
         assertThrows(
                 IllegalStateException.class,
                 () -> new BootstrapAdminService(
-                                repository, new PasswordHashService("ARGON2"), policy)
+                                repository,
+                                new PasswordHashService("ARGON2"),
+                                policy,
+                                applicationIdentity())
                         .createInitialAdmin("admin@example.com", "compromised-password"));
 
         verify(repository, never()).saveAndFlush(org.mockito.ArgumentMatchers.any());
+    }
+
+    private static ApplicationIdentityProperties applicationIdentity() {
+        return new ApplicationIdentityProperties("Test Application");
     }
 }

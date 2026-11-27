@@ -1,10 +1,28 @@
+spring:
+  application:
+    name: ${app.name}
 app:
+  name: JAVARA
+  branding:
+    powered-by: JAVARA
   time-zone: UTC
   email:
     enabled: true
     verification-token-ttl: 24h
     public-base-url: http://localhost:8080
   security:
+    mfa:
+      enabled: true
+      required: false
+      default-method: EMAIL_OTP
+      allowed-methods:
+        - EMAIL_OTP
+        - WEBAUTHN
+      challenge-ttl: 5m
+      max-attempts: 5
+      relying-party-id: localhost
+      allowed-origins:
+        - http://localhost:8080
     password-policy:
       enabled: true
       common-passwords-file: ./config/security/common-passwords.txt

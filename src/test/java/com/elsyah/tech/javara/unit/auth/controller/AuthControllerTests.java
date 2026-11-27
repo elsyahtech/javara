@@ -1,6 +1,7 @@
 package com.elsyah.tech.javara.unit.auth.controller;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -31,6 +32,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import com.elsyah.tech.javara.controller.auth.AuthController;
 import com.elsyah.tech.javara.entity.user.UserEntity;
+import com.elsyah.tech.javara.middleware.config.ApplicationIdentityProperties;
 import com.elsyah.tech.javara.middleware.security.JwtProperties;
 import com.elsyah.tech.javara.middleware.security.TokenTransport;
 import com.elsyah.tech.javara.request.auth.LoginRequest;
@@ -39,15 +41,30 @@ import com.elsyah.tech.javara.request.auth.RegisterRequest;
 import com.elsyah.tech.javara.request.user.UserRequest;
 import com.elsyah.tech.javara.response.common.ApiResponse;
 import com.elsyah.tech.javara.response.auth.AuthTokenResponse;
+import com.elsyah.tech.javara.response.auth.MfaChallengeResponse;
+import com.elsyah.tech.javara.entity.auth.MfaMethod;
 import com.elsyah.tech.javara.response.user.UserResponse;
 import com.elsyah.tech.javara.service.auth.AuthService;
 import com.elsyah.tech.javara.service.auth.AuthServiceResult;
+import com.elsyah.tech.javara.service.auth.MfaService;
 import com.elsyah.tech.javara.service.auth.PasswordResetService;
 import com.elsyah.tech.javara.service.common.ServiceResult;
 import com.elsyah.tech.javara.service.email.EmailVerificationService;
 import com.elsyah.tech.javara.service.user.UserService;
 
 class AuthControllerTests {
+    @Test
+    void emailVerificationPageUsesConfiguredApplicationName() {
+        ResponseEntity<String> response = controller(
+                        mock(UserService.class),
+                        mock(AuthService.class),
+                        jwtProperties(TokenTransport.BEARER))
+                .emailVerificationConfirmationPage("a".repeat(43));
+
+        assertTrue(response.getBody().contains("<title>Confirm Test Application email</title>"));
+        assertFalse(response.getBody().contains("JAVARA"));
+    }
+
     // Verifies that bearer login returns both tokens and the safe user profile.
     @Test
     void loginReturnsBearerTokensAndUserProfile() {
@@ -69,6 +86,38 @@ class AuthControllerTests {
         assertEquals("Bearer", response.getBody().getData().tokenType());
         assertEquals(uuid("user-1"), response.getBody().getData().user().id());
         verify(authService).login(request);
+    }
+
+    @Test
+    void loginReturnsMfaChallengeWithoutTokenCookiesOrBearerTokens() {
+        UserService userService = mock(UserService.class);
+        AuthService authService = mock(AuthService.class);
+        JwtProperties properties = jwtProperties(TokenTransport.COOKIE);
+        LoginRequest request = new LoginRequest("user@example.com", "password123");
+        MfaChallengeResponse challenge = new MfaChallengeResponse(
+                UUID.randomUUID(),
+                MfaMethod.EMAIL_OTP,
+                java.util.List.of(MfaMethod.EMAIL_OTP),
+                "VERIFY",
+                null,
+                java.time.Instant.now().plus(Duration.ofMinutes(5)));
+        when(authService.login(request)).thenReturn(new AuthServiceResult(
+                null,
+                null,
+                null,
+                HttpStatus.ACCEPTED,
+                "MFA verification code sent",
+                challenge));
+
+        ResponseEntity<ApiResponse<AuthTokenResponse>> response =
+                controller(userService, authService, properties).login(request);
+
+        assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(challenge, response.getBody().getData().mfaChallenge());
+        assertNull(response.getBody().getData().accessToken());
+        assertNull(response.getBody().getData().refreshToken());
+        assertNull(response.getHeaders().get(HttpHeaders.SET_COOKIE));
     }
 
     // Verifies that cookie login sets secure HttpOnly cookies without returning raw tokens.
@@ -97,9 +146,9 @@ class AuthControllerTests {
                 .allMatch(cookie -> cookie.contains("HttpOnly") && cookie.contains("Secure")));
     }
 
-    // Verifies that public registration always passes a request without client-controlled status.
+    // Verifies that public registration returns the generic anti-enumeration response.
     @Test
-    void registrationCreatesAUserWithServerControlledStatus() {
+    void registrationReturnsGenericAcceptedResponse() {
         UserService userService = mock(UserService.class);
         AuthService authService = mock(AuthService.class);
         RegisterRequest request = new RegisterRequest("new@example.com", "password123");
@@ -107,14 +156,38 @@ class AuthControllerTests {
         when(userService.registerUser(new UserRequest("new@example.com", "password123", null)))
                 .thenReturn(new ServiceResult<>(user, HttpStatus.CREATED, "User created"));
 
-        ResponseEntity<ApiResponse<UserResponse>> response =
+        ResponseEntity<ApiResponse<Void>> response =
                 controller(userService, authService, jwtProperties(TokenTransport.BEARER))
                         .register(request);
 
-        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
         assertNotNull(response.getBody());
-        assertEquals("USER", response.getBody().getData().role().name());
+        assertNull(response.getBody().getData());
+        assertEquals(
+                "If an account can be created with this email, verification instructions will be sent.",
+                response.getBody().getMessage());
         verify(userService).registerUser(new UserRequest("new@example.com", "password123", null));
+    }
+
+    @Test
+    void duplicateRegistrationReturnsSameGenericAcceptedResponse() {
+        UserService userService = mock(UserService.class);
+        AuthService authService = mock(AuthService.class);
+        RegisterRequest request = new RegisterRequest("existing@example.com", "password123");
+        when(userService.registerUser(
+                        new UserRequest("existing@example.com", "password123", null)))
+                .thenReturn(new ServiceResult<>(null, HttpStatus.CONFLICT, "Email already exists"));
+
+        ResponseEntity<ApiResponse<Void>> response =
+                controller(userService, authService, jwtProperties(TokenTransport.BEARER))
+                        .register(request);
+
+        assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertNull(response.getBody().getData());
+        assertEquals(
+                "If an account can be created with this email, verification instructions will be sent.",
+                response.getBody().getMessage());
     }
 
     // Verifies that invalid login payloads are rejected before authentication is attempted.
@@ -283,7 +356,9 @@ class AuthControllerTests {
                 authService,
                 mock(EmailVerificationService.class),
                 mock(PasswordResetService.class),
-                properties);
+                mock(MfaService.class),
+                properties,
+                new ApplicationIdentityProperties("Test Application"));
     }
 
     private static JwtProperties jwtProperties(TokenTransport transport) {
