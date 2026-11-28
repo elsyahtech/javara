@@ -2,6 +2,7 @@ package com.elsyah.tech.javara.middleware.security;
 
 import java.time.Clock;
 import java.util.List;
+import java.util.UUID;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
@@ -112,16 +113,23 @@ public class JwtTokenConfiguration {
             if (issuerResult.hasErrors()) {
                 return issuerResult;
             }
-            List<String> roles = token.getClaimAsStringList("roles");
-            if (roles != null
-                    && !roles.isEmpty()
-                    && roles.stream().allMatch(role -> "USER".equals(role) || "ADMIN".equals(role))
+            if (!token.hasClaim("principal_type")
+                    && hasValidUserSubject(token)
                     && userSessionValidator.test(token)) {
                 return OAuth2TokenValidatorResult.success();
             }
             return invalidToken();
         });
         return decoder;
+    }
+
+    private static boolean hasValidUserSubject(Jwt token) {
+        try {
+            UUID.fromString(token.getSubject());
+            return true;
+        } catch (IllegalArgumentException | NullPointerException exception) {
+            return false;
+        }
     }
 
     private static OAuth2TokenValidatorResult invalidToken() {

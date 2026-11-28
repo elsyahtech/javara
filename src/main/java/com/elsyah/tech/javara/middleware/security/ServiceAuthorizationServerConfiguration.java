@@ -1,11 +1,12 @@
 package com.elsyah.tech.javara.middleware.security;
 
+import javax.sql.DataSource;
+
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
-import org.springframework.jdbc.core.JdbcOperations;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -32,16 +33,17 @@ import com.elsyah.tech.javara.utils.security.PasswordHashService;
 @EnableConfigurationProperties(ServiceAuthProperties.class)
 public class ServiceAuthorizationServerConfiguration {
     @Bean
-    public RegisteredClientRepository registeredClientRepository(JdbcOperations jdbcOperations) {
-        return new JdbcRegisteredClientRepository(jdbcOperations);
+    public RegisteredClientRepository registeredClientRepository(DataSource dataSource) {
+        return new JdbcRegisteredClientRepository(
+                new JavaraPrefixedJdbcTemplate(dataSource));
     }
 
     @Bean
     public OAuth2AuthorizationService authorizationService(
-            JdbcOperations jdbcOperations,
+            DataSource dataSource,
             RegisteredClientRepository registeredClientRepository) {
         return new org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService(
-                jdbcOperations, registeredClientRepository);
+                new JavaraPrefixedJdbcTemplate(dataSource), registeredClientRepository);
     }
 
     @Bean

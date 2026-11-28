@@ -1,5 +1,7 @@
 package com.elsyah.tech.javara.middleware.security;
 
+import java.util.ArrayList;
+import java.util.UUID;
 import java.util.Set;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -26,9 +28,12 @@ import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.authentication.AuthenticationServiceException;
+import org.springframework.dao.DataAccessException;
 
 import com.elsyah.tech.javara.middleware.cors.CorsProperties;
 import com.elsyah.tech.javara.middleware.feature.FeatureModulesProperties;
+import com.elsyah.tech.javara.service.user.UserRoleService;
 
 @Configuration
 @EnableMethodSecurity
@@ -60,7 +65,8 @@ public class ApiSecurityConfiguration {
             ApiAuthenticationEntryPoint authenticationEntryPoint,
             ApiAccessDeniedHandler accessDeniedHandler,
             FeatureModulesProperties features,
-            Environment environment) throws Exception {
+            Environment environment,
+            JwtAuthenticationConverter jwtAuthenticationConverter) throws Exception {
         boolean serviceAuthEnabled = environment.getProperty(
                 "app.security.service-auth.enabled", Boolean.class, true);
         JwtProperties jwtProperties = null;
@@ -113,7 +119,8 @@ public class ApiSecurityConfiguration {
                 authorize.requestMatchers(
                         "/api/v1/auth", "/api/v1/auth/**",
                         "/api/v1/admin", "/api/v1/admin/**",
-                        "/api/v1/users", "/api/v1/users/**").permitAll();
+                        "/api/v1/users", "/api/v1/users/**",
+                        "/api/v1/roles", "/api/v1/roles/**").permitAll();
             } else {
                 authorize.requestMatchers(PUBLIC_AUTH_ENDPOINTS.toArray(String[]::new)).permitAll();
             }
@@ -156,7 +163,7 @@ public class ApiSecurityConfiguration {
                             serviceAuthEnabled))
                     .authenticationEntryPoint(authenticationEntryPoint)
                     .accessDeniedHandler(accessDeniedHandler)
-                    .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
+                    .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)));
         }
 
         if (securityHeaders.enabled()) {
@@ -214,7 +221,9 @@ public class ApiSecurityConfiguration {
                                 || path.equals("/api/v1/admin")
                                 || path.startsWith("/api/v1/admin/")
                                 || path.equals("/api/v1/users")
-                                || path.startsWith("/api/v1/users/"))
+                                || path.startsWith("/api/v1/users/")
+                                || path.equals("/api/v1/roles")
+                                || path.startsWith("/api/v1/roles/"))
                 || !serviceAuthEnabled
                         && (path.startsWith("/api/v1/service-clients")
                                 || path.startsWith("/oauth2/")
@@ -231,19 +240,28 @@ public class ApiSecurityConfiguration {
     }
 
     @Bean
-    public JwtAuthenticationConverter jwtAuthenticationConverter() {
+    public JwtAuthenticationConverter jwtAuthenticationConverter(
+            ObjectProvider<UserRoleService> userRoleServices) {
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
         JwtGrantedAuthoritiesConverter scopeAuthorities = new JwtGrantedAuthoritiesConverter();
         converter.setJwtGrantedAuthoritiesConverter(jwt -> {
-            var authorities = new java.util.ArrayList<GrantedAuthority>();
+            var authorities = new ArrayList<GrantedAuthority>();
             if ("service".equals(jwt.getClaimAsString("principal_type"))) {
                 authorities.addAll(scopeAuthorities.convert(jwt));
             } else {
-                var roles = jwt.getClaimAsStringList("roles");
-                if (roles != null) {
-                    roles.stream()
-                            .<GrantedAuthority>map(role -> new SimpleGrantedAuthority("ROLE_" + role))
-                            .forEach(authorities::add);
+                UserRoleService userRoleService = userRoleServices.getIfAvailable();
+                if (userRoleService == null) {
+                    return authorities;
+                }
+                try {
+                    UUID userId = UUID.fromString(jwt.getSubject());
+                    authorities.addAll(userRoleService.authoritiesForUser(userId));
+                } catch (IllegalArgumentException exception) {
+                    throw new AuthenticationServiceException(
+                            "User token subject is invalid", exception);
+                } catch (DataAccessException exception) {
+                    throw new AuthenticationServiceException(
+                            "Current user permissions could not be resolved", exception);
                 }
             }
             return authorities;

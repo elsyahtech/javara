@@ -18,7 +18,8 @@ public record JwtProperties(
         Boolean cookieSecure,
         String cookieSameSite,
         String accessCookieName,
-        String refreshCookieName) {
+        String refreshCookieName,
+        Boolean refreshTokenRotationEnabled) {
     public JwtProperties {
         transport = transport == null ? TokenTransport.COOKIE : transport;
         accessTokenTtl = accessTokenTtl == null ? Duration.ofMinutes(15) : accessTokenTtl;
@@ -27,6 +28,8 @@ public record JwtProperties(
         cookieSameSite = cookieSameSite == null ? "Strict" : normalizeSameSite(cookieSameSite);
         accessCookieName = accessCookieName == null ? "ACCESS_TOKEN" : accessCookieName;
         refreshCookieName = refreshCookieName == null ? "REFRESH_TOKEN" : refreshCookieName;
+        refreshTokenRotationEnabled =
+                refreshTokenRotationEnabled == null || refreshTokenRotationEnabled;
 
         if (signingKey == null || signingKey.isBlank()) {
             throw new IllegalArgumentException(

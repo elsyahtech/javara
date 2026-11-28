@@ -36,7 +36,7 @@ public class AdminPasswordResetController {
     }
 
     @PostMapping("/{userId}/security/force-password-reset")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('password-resets:manage')")
     public ResponseEntity<ApiResponse<Void>> forceEmergencyPasswordReset(
             @AuthenticationPrincipal Jwt principal,
             @PathVariable UUID userId,
@@ -56,7 +56,7 @@ public class AdminPasswordResetController {
     }
 
     @PostMapping("/{userId}/password/recovery/authorize")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('password-resets:manage')")
     public ResponseEntity<ApiResponse<Void>> authorizeSupportRecovery(
             @AuthenticationPrincipal Jwt principal,
             @PathVariable UUID userId,

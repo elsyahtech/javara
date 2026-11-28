@@ -23,7 +23,7 @@ company boundary:
   contains user identity, credentials, role, status, and timestamps, but no
   tenant/company association.
 - [User schema migration](../../../src/main/resources/db/migration/V1__create_user.sql)
-  defines a global `users` table without a tenant/company key or membership
+  defines a global `javara_users` table without a tenant/company key or membership
   table; its active-email unique index is global rather than tenant-scoped.
 - [`UserRepository`](../../../src/main/java/com/elsyah/tech/javara/repository/user/UserRepository.java)
   has user queries without a tenant parameter; `findAllUsersPage` lists users
@@ -37,6 +37,16 @@ company boundary:
 This is a bounded repository observation, not proof that no external
 integration or customer-specific extension can add tenancy outside the
 assessed baseline.
+
+### Current worktree update
+
+The current worktree adds a tenant/membership schema and role/permission
+assignments in migration V8. JWT user roles are resolved from PostgreSQL for
+each request, and the built-in role-management API operates only in `SINGLE`
+mode. Setup defaults to `SINGLE`; selecting `SHARED` is rejected at startup.
+This is implementation evidence for the current worktree, not a completed
+security assessment or proof of tenant isolation. User repositories,
+service-client data, and request context are not yet tenant-scoped.
 
 ### Preliminary interpretation
 

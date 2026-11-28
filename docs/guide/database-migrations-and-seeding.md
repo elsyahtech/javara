@@ -19,21 +19,33 @@ Keep application migrations and optional examples in separate directories:
 | JAVARA and application schema migrations | `src/main/resources/db/migration/` | Yes, at application startup |
 | Optional product schema example | `examples/postgres/products/` | No |
 | Optional development product data | `examples/postgres/products/seed-dev.sql` | No |
+| Optional development authorization data | `examples/postgres/authorization/seed-dev.sql` | No |
 
 Flyway only scans its configured migration directory. It does not scan
 `examples/`.
+
+JAVARA reserves the `javara_` table prefix for its own data, including
+authentication, authorization, MFA, and tenant tables. Use a distinct
+application or domain prefix for client-owned tables so ownership remains
+clear. `flyway_schema_history` keeps Flyway's standard name.
+
+The canonical relational design and logical-to-physical type mappings are
+documented in the [JAVARA logical database model](../database-logical-model.md).
+PostgreSQL migrations are the current physical implementation; other SQL
+drivers need vendor-specific DDL while preserving the same model and behavior.
 
 ## Add a schema migration
 
 1. Make sure PostgreSQL is available and use a development database, not
    production.
-2. Choose the next unused migration number. JAVARA currently uses V1 through
-   V3, so V4 is the next version for an application migration.
+2. Choose the next unused migration number. Check
+   `src/main/resources/db/migration/` for the latest version before naming
+   your migration.
 3. Create a file under `src/main/resources/db/migration/` using this name
    format:
 
    ```text
-   V4__create_products.sql
+   V9__create_products.sql
    ```
 
    Use two underscores between the version and description. Keep the
@@ -50,20 +62,26 @@ local JAVARA checkout, copy it into the migration directory and then start the
 application:
 
 ```bash
-test ! -e src/main/resources/db/migration/V4__create_products.sql
+test ! -e src/main/resources/db/migration/V9__create_products.sql
 cp examples/postgres/products/V4__create_products.sql \
-  src/main/resources/db/migration/V4__create_products.sql
+  src/main/resources/db/migration/V9__create_products.sql
 make run
 ```
 
-If your application already has a V3 migration, choose the next unused number
-instead and rename the file. Do not copy a migration over an existing file.
+If you maintain a fork with additional migrations, choose its next unused
+number and rename the file. Do not copy a migration over an existing file.
 
 Flyway records each migration after it runs. Do not edit or remove a
 migration that has been applied to a database shared with other developers or
 used outside local development. Add a new migration to make later changes.
 For example, add `V5__add_product_sku.sql` instead of changing the old
 products migration.
+
+The current pre-release migration set was updated to create JAVARA-owned
+tables with the `javara_` prefix from the beginning. A database carrying
+Flyway history from the earlier unprefixed migration files will fail checksum
+validation; use a new, empty database for this version rather than baselining
+over the old schema.
 
 ## Add optional development seed data
 
@@ -112,11 +130,54 @@ WHERE deleted_at IS NULL
 ORDER BY name;
 ```
 
+## Try the built-in and sample roles
+
+The role foundation migration seeds two built-in roles and the initial
+permission catalog:
+
+- `USER` receives `auth:self`, for authenticated self-service operations.
+- `ADMIN` receives all permissions in the initial catalog.
+
+These are system-managed roles; the application prevents them from being
+edited or deleted. The initial catalog includes `users:read`, which is
+enforced by the user-management API.
+
+For a custom-role example, the optional
+[`seed-dev.sql`](../../examples/postgres/authorization/seed-dev.sql) creates
+`ACCOUNT_READER` with only the `users:read` permission. It does not create a
+user or assign the role to anyone. Run it only against a local development
+database after the role foundation migration has been applied:
+
+```bash
+bash scripts/docker-compose.sh exec -T postgres sh -c \
+  'exec psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+  < examples/postgres/authorization/seed-dev.sql
+```
+
+The seed is safe to rerun. To assign the example role, authenticate as an
+administrator with `roles:manage` and call
+`PUT /api/v1/users/{userId}/roles` with:
+
+```json
+{
+  "roles": ["ACCOUNT_READER"]
+}
+```
+
+JAVARA retains the baseline `USER` role when replacing assignments. The sample
+permission allows reading user accounts, so assign it only when that access is
+intended. To model a client application's own capabilities, add a reviewed
+permission to its database catalog and enforce that permission in the
+application endpoint; creating a role or permission string alone does not
+grant endpoint access.
+
 ## Safety rules for seed data
 
 - Keep optional development seeds outside
   `src/main/resources/db/migration/`; otherwise Flyway will run them at
   application startup.
+- The authorization sample is not a production default and is not assigned
+  automatically. Review its permission before assigning it to any account.
 - Never put demo passwords, API keys, personal information, or real customer
   data in a seed file.
 - Do not use this sample seed in production. Production data should be

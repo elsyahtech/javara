@@ -33,6 +33,11 @@ Auditor approval and a documented rationale.
 - Selected target: shared multi-tenant.
 - Implementation status: not present or verified in the assessed baseline.
 
+The current worktree has since added a tenant-aware role schema and database-backed
+authorization for `SINGLE`, plus a startup guard that rejects `SHARED`. These
+changes have not been independently assessed and do not verify shared-tenant
+isolation. The ASVS counts above remain unchanged.
+
 ## Next step
 
 Retest pending V6/V7 remediations and address the remaining known gaps:

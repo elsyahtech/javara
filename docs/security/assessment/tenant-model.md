@@ -1,111 +1,126 @@
-# Shared Multi-Tenant Security Decision
+# Tenant and Role Security Model
 
-## Decision status
+## Decision and runtime status
 
-- Target model: shared multi-tenant deployment.
-- Selected: 2026-11-24.
-- User identity model: one global user may belong to multiple companies,
-  selected: 2026-11-24.
-- Implementation status at assessed source commit
-  `aacdb7858552fe2cfd35eb40ae04808d0e33c120`: not evidenced.
-- This record defines security requirements for the target; it is not an
-  implementation design or a claim that tenant isolation exists.
+- The setup choice is `SINGLE` (one organization) or `SHARED` (multiple
+  organizations in one deployment); `SINGLE` is the default.
+- `SINGLE` is the only supported runtime mode.
+- `SHARED` is deliberately rejected during startup. The schema foundation does
+  not provide end-to-end tenant isolation.
+- User roles and permission authorities are stored in PostgreSQL. Redis caches
+  the effective role/permission snapshot, while PostgreSQL authorization
+  revisions ensure changes take effect on the next request. JWT role claims are
+  not an authorization source.
 
-## Context
+## Single-organization role model
 
-JAVARA is intended to be a reusable platform for multiple companies and
-customer solutions. A shared deployment can reduce operating cost and support
-dynamic provisioning, but it makes tenant isolation a critical security
-boundary. A missing or incorrectly propagated tenant context could expose or
-modify another company's data.
+Migration
+[`V8`](../../../src/main/resources/db/migration/V8__create_tenant_and_role_foundation.sql)
+adds the foundation:
 
-## Current baseline gap
+- `javara_tenants` and `javara_tenant_memberships` associate users with an organization. In
+  `SINGLE`, existing and new users are attached to the internal `default`
+  organization.
+- `javara_user_roles` stores built-in and custom role definitions.
+- `javara_permissions` is the allow-list of capabilities that JAVARA endpoints can
+  enforce. `javara_user_role_details` links roles to those permissions.
+- `javara_user_role_assignments` links roles to a user's organization membership.
+- Existing `USER` and `ADMIN` accounts are backfilled. The legacy `javara_users.role`
+  value is retained for compatibility, but authorization uses role assignments
+  and permission details.
 
-The inspected baseline has a global user role and no tenant membership model:
+The built-in role definitions cannot be modified or deleted. `USER` remains a
+baseline assignment; user role updates add it if it is omitted. Custom roles
+may use only permissions in the catalog. Add new application capabilities
+through reviewed code and database changes; arbitrary permission strings do
+not grant access.
 
-- [`UserEntity`](../../../src/main/java/com/elsyah/tech/javara/entity/user/UserEntity.java)
-  stores one global role per user.
-- [`UserRole`](../../../src/main/java/com/elsyah/tech/javara/entity/user/UserRole.java)
-  contains only `USER` and `ADMIN`.
-- [`AccessTokenService`](../../../src/main/java/com/elsyah/tech/javara/service/auth/AccessTokenService.java)
-  issues a user token with identity and global role claims, but no tenant
-  context.
-- The [user migration](../../../src/main/resources/db/migration/V1__create_user.sql)
-  has global email uniqueness and no membership relation; the
-  [OAuth client migration](../../../src/main/resources/db/migration/V3__create_oauth2_client_credentials.sql)
-  does not associate clients with a tenant.
+Migration V8 seeds `USER` with `auth:self` and `ADMIN` with the initial
+permission catalog. An optional development-only
+[`ACCOUNT_READER` seed](../../../examples/postgres/authorization/seed-dev.sql)
+demonstrates a custom role with only `users:read`; it creates no user and
+assigns the role to nobody. The [database seeding guide](../../guide/database-migrations-and-seeding.md)
+shows how to run it and assign it deliberately through the role-management API.
 
-Global user identity is compatible with the selected product model, but
-company membership, tenant-scoped authorization, and tenant-bound service
-clients are not evidenced in this baseline.
+Role management is available when the built-in authentication API is enabled:
 
-## Proposed logical model
+- `GET /api/v1/roles` and `GET /api/v1/roles/permissions`
+- `POST /api/v1/roles`, `PUT /api/v1/roles/{key}`, and
+  `DELETE /api/v1/roles/{key}`
+- `GET /api/v1/users/{id}/roles` and `PUT /api/v1/users/{id}/roles`
 
-This is a proposal for review, not an approved implementation design:
+Role creation, changes, deletion, and assignment require the
+`roles:manage` permission. Built-in roles and the final role manager are
+protected against removal. Role and permission changes take effect on the next request, including for
+already-issued access tokens. Redis caches effective authorities for up to
+five minutes. Each lookup first reads the tenant policy revision and the user's
+membership revision from PostgreSQL, then checks Redis using a tenant-, user-,
+and revision-specific key. A cache miss loads effective roles and permissions
+from PostgreSQL. Updating a role's permissions advances the tenant policy
+revision; changing a user's assignments or active/deleted state advances that
+membership's revision in the same transaction. Old cache entries cannot match
+the new revision and expire within five minutes. Redis read/write failures
+fall back to PostgreSQL; database failures do not fall back to JWT claims.
 
-- Keep a global user identity and add a company/tenant entity plus a
-  user-to-tenant membership relation.
-- Store tenant-scoped membership status and roles separately from any
-  platform-wide administrative role.
-- Establish an active tenant only after verifying the user's membership. A
-  tenant ID supplied by the caller must not establish authorization.
-- Bind service clients and their allowed scopes to an explicit tenant.
-- Propagate the authorized tenant context to every data-access operation and
-  include tenant ownership in constraints for tenant-owned data.
-- Evaluate database-enforced isolation (such as row-level security) as
-  defense-in-depth; do not treat it as a substitute for application-level
-  authorization and tests.
+New access tokens no longer contain a `roles` claim. Previously issued signed
+tokens remain valid only while their session is active, and their role claim is
+ignored; current authority is resolved from the PostgreSQL revision and
+revision-matched Redis cache, with PostgreSQL as the source for cache misses.
+If authoritative lookup fails, the request must not receive role-derived
+authority from a token claim.
 
-## Required security invariants
+## Shared-mode security requirements
 
-The design and implementation must demonstrate that:
+Before enabling shared multi-tenant runtime, JAVARA must demonstrate all of the
+following:
 
-1. Tenant identity is derived from authenticated, server-validated context.
-   A caller-supplied tenant identifier alone must never grant access to a
-   tenant.
+1. Tenant identity comes from authenticated, server-validated context. A
+   caller-supplied tenant ID alone never grants access.
 2. Every tenant-owned read, create, update, delete, list, search, export, and
    background operation is scoped to the authorized tenant. Missing or
-   ambiguous tenant context fails closed.
-3. Authorization is evaluated for the user or service principal within the
-   tenant context. Any explicitly supported cross-tenant administrative access
-   is narrowly granted, separately authenticated, and auditable.
-4. Tenant isolation is preserved across database queries and constraints,
-   OAuth/service clients, caches, queues/events, files, rate limits, logs, and
-   error responses.
-5. Company onboarding, membership changes, offboarding, data retention,
-   export/deletion, tenant configuration, and recovery procedures preserve the
-   same isolation boundary.
-6. Tests demonstrate both permitted same-tenant access and denied
-   cross-tenant access for each data-access path, including list/search,
-   privileged operations, service clients, and concurrent requests.
+   ambiguous context fails closed.
+3. Authorization is evaluated for the user or service principal within that
+   tenant. Cross-tenant administration, if supported, is separately granted,
+   authenticated, and audited.
+4. Tenant isolation is preserved in database queries and constraints,
+   service-client credentials and scopes, caches, queues, files, rate limits,
+   logs, backups, and error responses.
+5. Onboarding, membership changes, offboarding, recovery, retention, export,
+   and deletion preserve the same isolation boundary.
+6. Tests prove permitted same-tenant access and denied cross-tenant access for
+   each data-access path, including list/search, privileged operations,
+   service clients, and concurrent requests.
 
-These are platform security requirements. The final implementation choices
-(for example, database row-level security, application-level tenant scoping,
-or a combination) require a separate design review and defense-in-depth
-analysis.
+The current role assignment lookup is scoped to the internal default
+organization. Service clients are not tenant-bound, and no tenant selection or
+tenant context is propagated through requests. Therefore, choosing
+`app.tenancy.mode=SHARED` fails fast instead of running with incomplete
+controls.
 
-## Design decisions still required
+Application-owned tables use the `javara_` prefix to distinguish them from
+tables added by a consuming application. Spring-owned authorization and
+WebAuthn persistence tables are also stored with this prefix; the application
+adapts the framework JDBC operations to those names.
 
-- How tenant context is established and propagated through HTTP, jobs, and
-  service-to-service requests.
-- How membership roles/scopes are represented and how membership changes
-  revoke or constrain existing sessions and access tokens.
-- Whether user email and service-client identifiers are globally unique or
-  tenant-scoped beyond the selected global user-identity model.
-- How tenant ownership is enforced in persistence, including query filters,
-  database constraints, and any row-level controls.
-- Whether cryptographic keys, secrets, quotas, logs, backups, and retention
-  policies are shared or tenant-specific.
-- How migrations and existing global users/clients are handled when enabling
-  tenants.
+## Database mode lock and migration
 
-Each decision must have a documented rationale, threat analysis, and tests
-before the corresponding control is marked as verified.
+At first startup, JAVARA records the selected mode in
+`javara_installation_settings`. Subsequent startup checks require the
+configuration to match the recorded value. Changing mode is a data migration,
+not a configuration toggle. Do not edit the database marker manually to
+bypass the startup check.
+
+Migration V8 backfills users created by earlier migrations in this migration
+set into the default organization and their `USER`/`ADMIN` role assignments.
+All JAVARA-owned tables are created with the `javara_` prefix from their
+initial migration; Flyway's `flyway_schema_history` retains its standard name.
+This pre-release migration set is for a fresh, empty database and is not
+compatible with databases carrying the previous unprefixed migration history.
 
 ## Assessment gate
 
-Do not claim shared multi-company support until the tenant model is documented,
-implemented, reviewed, and supported by reproducible isolation tests. A
-successful ASVS assessment of the existing single-company baseline would not
-by itself prove this capability. Customer-specific regulations and production
-configuration also remain separate assessment inputs.
+Do not claim shared multi-company support until the tenant model is complete,
+reviewed, and supported by reproducible isolation tests. Passing an assessment
+of the single-organization profile does not prove shared-tenant isolation.
+Customer-specific regulations and production configuration remain separate
+assessment inputs.

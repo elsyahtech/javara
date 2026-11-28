@@ -26,9 +26,10 @@ regulatory, contractual, or jurisdiction-specific obligations. Identify any
 applicable overlays separately, such as payment-card controls or energy/OT
 requirements, based on the client's actual use case.
 
-The multi-company isolation model is an open architecture decision. Do not
-claim shared multi-tenancy, dedicated tenant isolation, or support for both
-until the model is documented and its isolation guarantees are verified.
+The shared multi-tenant model is a selected future target. The current
+implementation supports `SINGLE` and rejects `SHARED` at startup. Do not claim
+shared multi-tenancy or tenant isolation until the model is complete and its
+isolation guarantees are verified.
 
 The matrix lists all 345 v5.0.0 requirements because a Level 3 assessment
 includes the requirements assigned to Levels 1 and 2 as well as Level 3. The

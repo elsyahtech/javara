@@ -37,6 +37,7 @@ import com.elsyah.tech.javara.service.common.ServiceResult;
 import com.elsyah.tech.javara.response.user.UserResponse;
 import com.elsyah.tech.javara.response.user.UserResponseWithSelectColumn;
 import com.elsyah.tech.javara.service.user.UserService;
+import com.elsyah.tech.javara.service.user.UserRoleService;
 import com.elsyah.tech.javara.controller.user.UserController;
 
 
@@ -62,7 +63,7 @@ class UserControllerTests {
     @Test
     void createUserWithInvalidPayloadReturnsBadRequest() throws Exception {
         UserService service = mock(UserService.class);
-        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new UserController(service)).build();
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(controller(service)).build();
 
         mockMvc.perform(post("/api/v1/users")
                         .contentType("application/json")
@@ -76,7 +77,7 @@ class UserControllerTests {
     @Test
     void updateUserWithInvalidPayloadReturnsBadRequest() throws Exception {
         UserService service = mock(UserService.class);
-        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new UserController(service)).build();
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(controller(service)).build();
 
         mockMvc.perform(put("/api/v1/users/11111111-1111-1111-1111-111111111111")
                         .contentType("application/json")
@@ -90,7 +91,7 @@ class UserControllerTests {
     @Test
     void invalidUserIdDoesNotCallTheService() throws Exception {
         UserService service = mock(UserService.class);
-        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new UserController(service)).build();
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(controller(service)).build();
 
         mockMvc.perform(get("/api/v1/users/not-a-valid-id"))
                 .andExpect(status().isNotFound());
@@ -102,7 +103,7 @@ class UserControllerTests {
     @Test
     void verbBasedListPathsAreNotFound() throws Exception {
         UserService service = mock(UserService.class);
-        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new UserController(service)).build();
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(controller(service)).build();
 
         mockMvc.perform(get("/api/v1/users/findAllWithSelectedColumn"))
                 .andExpect(status().isNotFound());
@@ -124,7 +125,7 @@ class UserControllerTests {
                 "User created successfully with id: user-1"));
 
         ResponseEntity<ApiResponse<UserResponse>> response =
-                new UserController(service).createUser(request);
+                controller(service).createUser(request);
 
         assertEquals(HttpStatus.CREATED, response.getStatusCode());
         assertNotNull(response.getBody());
@@ -150,7 +151,7 @@ class UserControllerTests {
                 "Users retrieved successfully"));
 
         ResponseEntity<ApiResponse<List<UserResponseWithSelectColumn>>> response =
-                new UserController(service).findAllUsers(1, 10);
+                controller(service).findAllUsers(1, 10);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertNotNull(response.getBody());
@@ -178,7 +179,7 @@ class UserControllerTests {
                 new ServiceResult<>(page, HttpStatus.OK, "Users retrieved successfully"));
 
         ResponseEntity<ApiResponse<List<UserResponseWithSelectColumn>>> response =
-                new UserController(service).findAllUsers(0, 20);
+                controller(service).findAllUsers(0, 20);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertNotNull(response.getBody());
@@ -196,7 +197,7 @@ class UserControllerTests {
         Page<UserSelectColumn> page = new PageImpl<>(List.of(), PageRequest.of(0, 20), 0);
         when(service.findAllUsers(PageRequest.of(0, 20))).thenReturn(
                 new ServiceResult<>(page, HttpStatus.OK, "Users retrieved successfully"));
-        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new UserController(service)).build();
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(controller(service)).build();
 
         mockMvc.perform(get("/api/v1/users"))
                 .andExpect(status().isOk())
@@ -215,7 +216,7 @@ class UserControllerTests {
     void findAllUsersRejectsNegativePage() {
         UserService service = mock(UserService.class);
         ResponseEntity<ApiResponse<List<UserResponseWithSelectColumn>>> response =
-                new UserController(service).findAllUsers(-1, 10);
+                controller(service).findAllUsers(-1, 10);
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         assertNotNull(response.getBody());
@@ -227,7 +228,7 @@ class UserControllerTests {
     void findAllUsersRejectsInvalidSize() {
         UserService service = mock(UserService.class);
         ResponseEntity<ApiResponse<List<UserResponseWithSelectColumn>>> response =
-                new UserController(service).findAllUsers(0, 101);
+                controller(service).findAllUsers(0, 101);
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         assertNotNull(response.getBody());
@@ -244,7 +245,7 @@ class UserControllerTests {
                 new ServiceResult<>(user, HttpStatus.OK, "User found"));
 
         ResponseEntity<ApiResponse<UserResponse>> response =
-                new UserController(service).findUserById(uuid("user-1"));
+                controller(service).findUserById(uuid("user-1"));
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertNotNull(response.getBody());
@@ -264,7 +265,7 @@ class UserControllerTests {
                 new ServiceResult<>(null, HttpStatus.NOT_FOUND, "User not found with id: missing-id"));
 
         ResponseEntity<ApiResponse<UserResponse>> response =
-                new UserController(service).findUserById(uuid("missing-id"));
+                controller(service).findUserById(uuid("missing-id"));
 
         assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
         assertNotNull(response.getBody());
@@ -283,7 +284,7 @@ class UserControllerTests {
                 new ServiceResult<>(projection, HttpStatus.OK, "User found"));
 
         ResponseEntity<ApiResponse<UserResponseWithSelectColumn>> response =
-                new UserController(service).findUserByIdWithSelectedColumns(uuid("user-1"));
+                controller(service).findUserByIdWithSelectedColumns(uuid("user-1"));
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertNotNull(response.getBody());
@@ -301,7 +302,7 @@ class UserControllerTests {
                         "User not found with id: missing-id"));
 
         ResponseEntity<ApiResponse<UserResponseWithSelectColumn>> response =
-                new UserController(service).findUserByIdWithSelectedColumns(uuid("missing-id"));
+                controller(service).findUserByIdWithSelectedColumns(uuid("missing-id"));
 
         assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
         assertNotNull(response.getBody());
@@ -322,7 +323,7 @@ class UserControllerTests {
                 new ServiceResult<>(user, HttpStatus.OK, "User updated successfully"));
 
         ResponseEntity<ApiResponse<UserResponse>> response =
-                new UserController(service).updateUser(uuid("user-1"), request);
+                controller(service).updateUser(uuid("user-1"), request);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertNotNull(response.getBody());
@@ -343,7 +344,7 @@ class UserControllerTests {
                 new ServiceResult<>(null, HttpStatus.NOT_FOUND, "User not found with id: missing-id"));
 
         ResponseEntity<ApiResponse<UserResponse>> response =
-                new UserController(service).updateUser(uuid("missing-id"), request);
+                controller(service).updateUser(uuid("missing-id"), request);
 
         assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
         assertNotNull(response.getBody());
@@ -362,7 +363,7 @@ class UserControllerTests {
         when(service.deleteUser(uuid("user-1"))).thenReturn(
                 new ServiceResult<>(deletedUser, HttpStatus.OK, "User deleted successfully"));
 
-        ResponseEntity<ApiResponse<UserResponse>> response = new UserController(service).deleteUser(uuid("user-1"));
+        ResponseEntity<ApiResponse<UserResponse>> response = controller(service).deleteUser(uuid("user-1"));
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertNotNull(response.getBody());
@@ -381,7 +382,7 @@ class UserControllerTests {
                         "User not found with id: missing-id"));
 
         ResponseEntity<ApiResponse<UserResponse>> response =
-                new UserController(service).deleteUser(uuid("missing-id"));
+                controller(service).deleteUser(uuid("missing-id"));
 
         assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
         assertNotNull(response.getBody());
@@ -400,6 +401,10 @@ class UserControllerTests {
         user.setPassword("password123");
         user.setIsActive(isActive);
         return user;
+    }
+
+    private static UserController controller(UserService service) {
+        return new UserController(service, mock(UserRoleService.class));
     }
 
     private static UserSelectColumn projection(UUID id, String email, Boolean isActive) {

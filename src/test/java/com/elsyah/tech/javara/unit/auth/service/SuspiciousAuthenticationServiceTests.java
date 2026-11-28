@@ -256,7 +256,8 @@ class SuspiciousAuthenticationServiceTests {
                         true,
                         "Strict",
                         "ACCESS_TOKEN",
-                        "REFRESH_TOKEN"),
+                        "REFRESH_TOKEN",
+                        null),
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 

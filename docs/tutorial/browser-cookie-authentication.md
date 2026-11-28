@@ -83,9 +83,22 @@ store it in `XSRF-TOKEN` and copy its value to the configured header.
 ## 6. Refresh and log out
 
 The refresh cookie is scoped to `/api/v1/auth` and is sent to the refresh
-endpoint by the browser. Refresh rotates both server-side token state and the
-cookies. Do not try to read the HttpOnly refresh cookie in application
-JavaScript.
+endpoint by the browser. Refresh-token rotation is enabled by default: in
+that mode, a successful refresh rotates the server-side token and sends a new
+refresh cookie. If the deployment disables rotation, the refresh cookie stays
+the same and only the access cookie changes. Do not try to read the HttpOnly
+refresh cookie in application JavaScript.
+
+An expired access cookie does not by itself mean the user must sign in again.
+The browser adapter can refresh the session and retry the failed request once.
+If refresh is rejected—for example, because the idle timeout, absolute session
+lifetime, or refresh-token TTL has been reached, or the session was revoked—the
+user must sign in again. The adapter returns the original `401` so the
+application can show its sign-in flow; it does not retry indefinitely.
+Refresh cannot revive an expired or revoked session. With rotation enabled,
+the adapter coordinates concurrent refreshes; custom cookie clients should
+do the same so they do not submit the same refresh cookie in parallel and
+trigger replay detection.
 
 Logout needs the refresh cookie and a CSRF header, but not a valid access
 cookie. This lets users log out after the access token expires. The server

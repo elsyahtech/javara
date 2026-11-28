@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 import com.elsyah.tech.javara.middleware.security.SessionProperties;
-import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
+import com.elsyah.tech.javara.repository.auth.UserSessionRepository;
 import com.elsyah.tech.javara.service.auth.SessionTokenValidator;
 
 class SessionTokenValidatorTests {
@@ -26,30 +26,48 @@ class SessionTokenValidatorTests {
 
     @Test
     void activeSessionIsTouchedWithConfiguredIdleDeadline() {
-        RefreshTokenRepository repository = mock(RefreshTokenRepository.class);
+        UserSessionRepository repository = mock(UserSessionRepository.class);
         Jwt token = token();
         when(repository.touchActiveSession(
-                        SESSION_ID, USER_ID, NOW, NOW.minusSeconds(900)))
+                        SESSION_ID, USER_ID, NOW, true, NOW.minusSeconds(900)))
                 .thenReturn(1);
         SessionTokenValidator validator = new SessionTokenValidator(
                 repository,
-                new SessionProperties(null, null, null),
+                new SessionProperties(null, null, null, null, null),
                 Clock.fixed(NOW, ZoneOffset.UTC));
 
         assertTrue(validator.isActive(token));
 
         verify(repository).touchActiveSession(
-                SESSION_ID, USER_ID, NOW, NOW.minusSeconds(900));
+                SESSION_ID, USER_ID, NOW, true, NOW.minusSeconds(900));
+    }
+
+    @Test
+    void disabledIdleTimeoutTouchesSessionWithoutEnforcingIdleDeadline() {
+        UserSessionRepository repository = mock(UserSessionRepository.class);
+        Jwt token = token();
+        when(repository.touchActiveSession(
+                        SESSION_ID, USER_ID, NOW, false, NOW.minusSeconds(900)))
+                .thenReturn(1);
+        SessionTokenValidator validator = new SessionTokenValidator(
+                repository,
+                new SessionProperties(false, null, null, null, null),
+                Clock.fixed(NOW, ZoneOffset.UTC));
+
+        assertTrue(validator.isActive(token));
+
+        verify(repository).touchActiveSession(
+                SESSION_ID, USER_ID, NOW, false, NOW.minusSeconds(900));
     }
 
     @Test
     void tokenWithoutSessionClaimIsRejectedWithoutRepositoryAccess() {
-        RefreshTokenRepository repository = mock(RefreshTokenRepository.class);
+        UserSessionRepository repository = mock(UserSessionRepository.class);
         Jwt token = mock(Jwt.class);
         when(token.getSubject()).thenReturn(USER_ID.toString());
         SessionTokenValidator validator = new SessionTokenValidator(
                 repository,
-                new SessionProperties(null, null, null),
+                new SessionProperties(null, null, null, null, null),
                 Clock.fixed(NOW, ZoneOffset.UTC));
 
         assertFalse(validator.isActive(token));
@@ -59,14 +77,14 @@ class SessionTokenValidatorTests {
 
     @Test
     void expiredOrRevokedSessionIsRejected() {
-        RefreshTokenRepository repository = mock(RefreshTokenRepository.class);
+        UserSessionRepository repository = mock(UserSessionRepository.class);
         Jwt token = token();
         when(repository.touchActiveSession(
-                        SESSION_ID, USER_ID, NOW, NOW.minusSeconds(900)))
+                        SESSION_ID, USER_ID, NOW, true, NOW.minusSeconds(900)))
                 .thenReturn(0);
         SessionTokenValidator validator = new SessionTokenValidator(
                 repository,
-                new SessionProperties(null, null, null),
+                new SessionProperties(null, null, null, null, null),
                 Clock.fixed(NOW, ZoneOffset.UTC));
 
         assertFalse(validator.isActive(token));

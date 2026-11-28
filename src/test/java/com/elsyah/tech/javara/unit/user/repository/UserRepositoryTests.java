@@ -69,10 +69,11 @@ class UserRepositoryTests extends PostgresRedisTestSupport {
 
     @Test
     void migratedSchemaUsesNativeUuidAndTimezoneAwareTimestamps() {
-        assertEquals("uuid", columnDataType("users", "id"));
-        assertEquals("timestamp with time zone", columnDataType("users", "created_at"));
-        assertEquals("uuid", columnDataType("refresh_tokens", "user_id"));
-        assertEquals("timestamp with time zone", columnDataType("refresh_tokens", "expires_at"));
+        assertEquals("uuid", columnDataType("javara_users", "id"));
+        assertEquals("timestamp with time zone", columnDataType("javara_users", "created_at"));
+        assertEquals("uuid", columnDataType("javara_user_sessions", "user_id"));
+        assertEquals("uuid", columnDataType("javara_refresh_tokens", "session_id"));
+        assertEquals("timestamp with time zone", columnDataType("javara_refresh_tokens", "expires_at"));
     }
 
     // Verifies that the database rejects an active duplicate email through the unique partial index.

@@ -1,6 +1,7 @@
 package com.elsyah.tech.javara.unit.auth.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
@@ -19,7 +20,6 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 
 import com.elsyah.tech.javara.entity.user.UserEntity;
-import com.elsyah.tech.javara.entity.user.UserRole;
 import com.elsyah.tech.javara.middleware.security.JwtProperties;
 import com.elsyah.tech.javara.middleware.security.JwtTokenConfiguration;
 import com.elsyah.tech.javara.middleware.security.TokenTransport;
@@ -39,7 +39,6 @@ class AccessTokenServiceTests {
         UserEntity user = new UserEntity();
         user.setId(uuid("user-1"));
         user.setEmail("user@example.com");
-        user.setRole(UserRole.ADMIN);
         UUID sessionId = uuid("session-1");
 
         Jwt decoded = decoder.decode(service.issue(user, sessionId, now));
@@ -53,7 +52,7 @@ class AccessTokenServiceTests {
                 now.getEpochSecond(),
                 ((Number) decoded.getClaim("auth_time")).longValue());
         assertEquals("user@example.com", decoded.getClaimAsString("email"));
-        assertEquals("ADMIN", decoded.getClaimAsStringList("roles").get(0));
+        assertNull(decoded.getClaim("roles"));
         assertEquals(List.of("pwd"), decoded.getClaimAsStringList("amr"));
         assertTrue(Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt())
                 .compareTo(Duration.ofMinutes(15)) <= 0);
@@ -72,7 +71,8 @@ class AccessTokenServiceTests {
                     true,
                     "Strict",
                     "ACCESS_TOKEN",
-                    "REFRESH_TOKEN");
+                    "REFRESH_TOKEN",
+                    null);
         } catch (IllegalArgumentException exception) {
             rejected = true;
         }
@@ -89,7 +89,8 @@ class AccessTokenServiceTests {
                 true,
                 "Strict",
                 "ACCESS_TOKEN",
-                "REFRESH_TOKEN");
+                "REFRESH_TOKEN",
+                null);
     }
 
     private static UUID uuid(String value) {

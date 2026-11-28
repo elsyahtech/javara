@@ -1,6 +1,7 @@
 package com.elsyah.tech.javara.response.user;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import com.elsyah.tech.javara.entity.user.UserEntity;
@@ -19,16 +20,21 @@ public record UserResponse(
     UUID id,
     String email,
     UserRole role,
+    List<String> roles,
     Boolean isActive,
     Instant createdAt,
     Instant updatedAt,
     Instant deletedAt
 ) {
-    public static UserResponse from(UserEntity userEntity) {
+    public static UserResponse from(UserEntity userEntity, List<String> roles) {
+        UserRole compatibilityRole = roles.contains(UserRole.ADMIN.name())
+                ? UserRole.ADMIN
+                : UserRole.USER;
         return new UserResponse(
             userEntity.getId(),
             userEntity.getEmail(),
-            userEntity.getRole(),
+            compatibilityRole,
+            List.copyOf(roles),
             userEntity.getIsActive(),
             userEntity.getCreatedAt(),
             userEntity.getUpdatedAt(),

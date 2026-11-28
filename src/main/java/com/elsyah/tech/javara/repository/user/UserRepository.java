@@ -75,6 +75,60 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
      * @return an Optional containing the UserEntity if found, or empty if not found
      */
     Optional<UserEntity> findByEmail(String email);
+
+    @Query(
+            value = """
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM javara_user_role_assignments assignment
+                        JOIN javara_tenant_memberships membership
+                          ON membership.user_id = assignment.user_id
+                         AND membership.tenant_id = assignment.tenant_id
+                        JOIN javara_tenants tenant ON tenant.id = membership.tenant_id
+                        JOIN javara_user_role_details detail ON detail.role_id = assignment.role_id
+                        JOIN javara_user_roles role ON role.id = assignment.role_id
+                        JOIN javara_users user_record ON user_record.id = assignment.user_id
+                        WHERE assignment.user_id = :userId
+                          AND tenant.tenant_key = 'default'
+                          AND tenant.status = 'ACTIVE'
+                          AND membership.status = 'ACTIVE'
+                          AND role.active = TRUE
+                          AND user_record.is_active = TRUE
+                          AND user_record.deleted_at IS NULL
+                          AND detail.permission_key = :permission
+                    )
+                    """,
+            nativeQuery = true)
+    boolean hasPermission(
+            @Param("userId") UUID userId,
+            @Param("permission") String permission);
+
+    @Query(
+            value = "SELECT id FROM javara_tenants WHERE tenant_key = 'default' FOR UPDATE",
+            nativeQuery = true)
+    UUID lockDefaultTenantForUpdate();
+
+    @Query(
+            value = """
+                    SELECT COUNT(DISTINCT assignment.user_id)
+                    FROM javara_user_role_assignments assignment
+                    JOIN javara_tenant_memberships membership
+                      ON membership.user_id = assignment.user_id
+                     AND membership.tenant_id = assignment.tenant_id
+                    JOIN javara_tenants tenant ON tenant.id = membership.tenant_id
+                    JOIN javara_user_role_details detail ON detail.role_id = assignment.role_id
+                    JOIN javara_user_roles role ON role.id = assignment.role_id
+                    JOIN javara_users user_record ON user_record.id = assignment.user_id
+                    WHERE tenant.tenant_key = 'default'
+                      AND tenant.status = 'ACTIVE'
+                      AND membership.status = 'ACTIVE'
+                      AND role.active = TRUE
+                      AND user_record.is_active = TRUE
+                      AND user_record.deleted_at IS NULL
+                      AND detail.permission_key = 'roles:manage'
+                    """,
+            nativeQuery = true)
+    long countActiveRoleManagers();
     
     /**
      * Finds a user by their ID with selected columns.

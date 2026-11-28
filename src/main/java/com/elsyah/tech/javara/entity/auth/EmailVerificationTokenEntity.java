@@ -11,7 +11,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "email_verification_tokens")
+@Table(name = "javara_email_verification_tokens")
 public class EmailVerificationTokenEntity {
     @Id
     @Column(name = "id", nullable = false)

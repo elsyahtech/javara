@@ -50,7 +50,6 @@ import com.elsyah.tech.javara.entity.user.UserEntity;
 import com.elsyah.tech.javara.middleware.security.JwtProperties;
 import com.elsyah.tech.javara.middleware.security.MfaProperties;
 import com.elsyah.tech.javara.repository.auth.MfaChallengeRepository;
-import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
 import com.elsyah.tech.javara.repository.auth.UserMfaMethodRepository;
 import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.response.auth.MfaChallengeResponse;
@@ -84,7 +83,7 @@ public class MfaService {
     private final MfaChallengeRepository challengeRepository;
     private final UserMfaMethodRepository methodRepository;
     private final UserRepository userRepository;
-    private final RefreshTokenRepository refreshTokenRepository;
+    private final SessionRevocationService sessionRevocationService;
     private final PasswordHashService passwordHashService;
     private final EmailNotificationService emailNotificationService;
     private final Map<MfaMethod, MfaOtpDeliveryChannel> otpChannels;
@@ -101,7 +100,7 @@ public class MfaService {
             MfaChallengeRepository challengeRepository,
             UserMfaMethodRepository methodRepository,
             UserRepository userRepository,
-            RefreshTokenRepository refreshTokenRepository,
+            SessionRevocationService sessionRevocationService,
             PasswordHashService passwordHashService,
             EmailNotificationService emailNotificationService,
             List<MfaOtpDeliveryChannel> otpChannels,
@@ -116,7 +115,7 @@ public class MfaService {
         this.challengeRepository = challengeRepository;
         this.methodRepository = methodRepository;
         this.userRepository = userRepository;
-        this.refreshTokenRepository = refreshTokenRepository;
+        this.sessionRevocationService = sessionRevocationService;
         this.passwordHashService = passwordHashService;
         this.emailNotificationService = emailNotificationService;
         this.otpChannels = otpChannels.stream().collect(Collectors.toUnmodifiableMap(
@@ -825,7 +824,7 @@ public class MfaService {
     }
 
     private void revokeSessions(UUID userId) {
-        refreshTokenRepository.revokeActiveTokensForUser(userId, clock.instant());
+        sessionRevocationService.revokeAllForUser(userId, clock.instant());
     }
 
     private boolean isUsable(MfaChallengeEntity challenge) {

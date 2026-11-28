@@ -73,6 +73,66 @@ integration. This profile does not issue user tokens, so another trusted
 JAVARA-compatible identity deployment must issue them and share the required
 active session data.
 
+## Organization mode and roles
+
+`make setup` and `make install` ask whether this deployment serves one
+organization or multiple organizations:
+
+```yaml
+app:
+  tenancy:
+    mode: SINGLE
+```
+
+`SINGLE` is the supported default. JAVARA stores an internal default
+organization and associates user roles with that organization. `SHARED` can
+be selected to make the intent explicit, but the application intentionally
+fails at startup until tenant selection, authorization, and data isolation are
+implemented end to end. Do not use `SHARED` for a live deployment.
+
+The selected mode is recorded in PostgreSQL on first startup. Changing the
+configuration later without a migration causes startup to fail with a
+diagnostic message.
+
+When `auth-api` is enabled, role management endpoints are available to callers
+with the `roles:manage` permission:
+
+| Method and path | Purpose |
+|---|---|
+| `GET /api/v1/roles` | List built-in and custom roles |
+| `GET /api/v1/roles/permissions` | List permission keys that can be assigned |
+| `POST /api/v1/roles` | Create a custom role |
+| `PUT /api/v1/roles/{key}` | Update a custom role's name, description, and permissions |
+| `DELETE /api/v1/roles/{key}` | Delete an unassigned custom role |
+| `GET /api/v1/users/{id}/roles` | Read a user's roles |
+| `PUT /api/v1/users/{id}/roles` | Replace a user's role assignments |
+
+Built-in `USER` and `ADMIN` roles cannot be changed or deleted. A user always
+retains the baseline `USER` assignment. Custom roles can use only permission
+keys returned by the permissions endpoint; adding new endpoint capabilities
+requires a reviewed application and database change.
+User responses include the current `roles` list. The legacy singular `role`
+field remains as a `USER`/`ADMIN` compatibility summary; use `roles` for current
+assignments.
+
+The JWT `roles` claim is not used for authorization. PostgreSQL remains the
+source of truth for role assignments and permissions. On each authorization
+lookup, JAVARA reads the active organization's and user's authorization
+revisions from PostgreSQL, then checks Redis for the matching cached role and
+permission snapshot. A cache miss loads the snapshot from PostgreSQL and
+caches it for up to five minutes. Role-definition permission changes advance
+the organization revision; assignment and account-status changes advance the
+user-membership revision in the same database transaction. Therefore the next
+request after a successful change uses a new cache key and cannot receive the
+old snapshot, including on another application instance. Old cache entries
+expire after five minutes.
+
+Redis is only a cache for authorization data. If a Redis cache read or write
+fails, JAVARA uses PostgreSQL; if PostgreSQL cannot provide the authoritative
+revision or role data, the request does not gain access from an old JWT claim.
+This cache fallback is separate from authentication rate limiting, which has
+its own Redis availability policy.
+
 If `resource-server` is disabled, the API filter chain does not validate bearer
 tokens and unmatched routes are public. Method-level `@PreAuthorize` checks
 remain active, so routes that require an authenticated principal may still
@@ -255,6 +315,7 @@ app:
       signing-key: "<use-a-unique-secret-from-your-secret-manager>"
       access-token-ttl: 15m
       refresh-token-ttl: 30d
+      refresh-token-rotation-enabled: true
 ```
 
 Use a strong, unique signing key for each environment. Do not copy the example
@@ -266,6 +327,93 @@ use. To generate a key for manual local configuration, run:
 openssl rand -base64 32
 ```
 
+`refresh-token-ttl` is the lifetime of a refresh token, but the session policy
+can impose a shorter total lifetime:
+
+- `absolute-lifetime-enabled: true` (the secure default) sets a maximum session
+  duration measured from sign-in, using `absolute-lifetime` (12 hours by
+  default, and at most 12 hours). Refreshing rotates the token but never moves
+  that end time. Therefore `refresh-token-ttl: 30d` does not produce a 30-day
+  session while the maximum session duration is set to 12 hours.
+- `absolute-lifetime-enabled: false` makes the configured
+  `refresh-token-ttl` the fixed maximum session lifetime from login. With the
+  default `30d`, a session can last up to 30 days, but repeated refreshes do
+  not extend that original deadline. The unused `absolute-lifetime` value is
+  ignored in this mode.
+
+The idle timeout is a separate rule: when enabled, inactivity can end a
+session sooner than either total lifetime. Defaults are 15 minutes idle and a
+12-hour maximum session duration. `make security-setup` lets each deployment
+choose whether to enable idle expiry, the maximum session duration, and
+refresh-token rotation.
+
+Refresh-token rotation is enabled by default. When enabled, a successful
+refresh returns a new refresh token and invalidates the old one; reuse of a
+rotated token is treated as possible theft and revokes the user's active
+sessions. When disabled, refresh returns the same refresh token and only issues
+a new access token. Its expiry does not move: it remains fixed from login and
+is also capped by the session's end time. Disabling rotation improves client
+simplicity but removes replay detection; a stolen token can be reused until it
+expires or its session is revoked. This option is independent of idle timeout
+and maximum session duration.
+
+Run `make security-setup` and restart JAVARA for the new settings to take
+effect. A configuration change does not restore sessions that were already
+revoked. For example, if refresh was attempted after an enabled idle timeout
+had expired, JAVARA revoked that session; disabling idle expiry later cannot
+make its old refresh token valid again.
+
+Maximum session end times are saved when a session is created. Existing
+sessions keep their saved end time after a configuration change; sign in again
+to test the new maximum session duration setting. To test disabled idle expiry, wait
+longer than the configured idle period but less than the session's fixed end
+time. With the default 15-minute access-token lifetime, a protected request may
+first return `401`; refreshing with the new session's current refresh token
+should succeed if the session is otherwise valid. Do not retry a refresh token
+that already returned `401`: a revoked-token reuse is treated as possible theft
+and can revoke the user's other active sessions too.
+
+### What each session setting does
+
+These controls are independent. Changing one does not disable the others.
+The defaults below favor a secure production baseline; `make security-setup`
+lets each deployment choose different behavior and shows the main trade-off.
+
+| Setting | Enabled | Disabled |
+|---|---|---|
+| `idle-timeout-enabled` (default `true`, 15 minutes) | A successful authenticated request or refresh updates the server's last-activity time. If the idle period passes, refresh is rejected with `401` and the session is revoked; the user must sign in again. | Inactivity alone does not end the session. An expired access token can still be refreshed while the session's total lifetime and other checks remain valid. This is more convenient for idle users, but an unattended session remains usable longer. |
+| Maximum session duration (`absolute-lifetime-enabled`, default `true`, 12 hours) | The session has a fixed end time measured from sign-in. Refresh does not move it. When it ends, refresh is rejected and the user must sign in again, even if they were recently active. | `refresh-token-ttl` becomes the session's fixed maximum lifetime measured from sign-in (30 days by default). This is not a sliding window: refresh does not add another TTL. |
+| `refresh-token-rotation-enabled` (default `true`) | Each successful refresh issues a new access token and a new refresh token. Save the new refresh token and discard the old one. Reusing an old, rotated token is treated as possible theft and can revoke the user's active sessions. | Each refresh issues a new access token but keeps the same refresh token. The client must keep using that token; its expiry does not move. Replay detection is unavailable, so a stolen token can be reused until it expires or the session is revoked. |
+
+`max-concurrent-sessions` is a separate limit (five by default). At the limit,
+a new login is rejected with `409`; JAVARA does not silently log out another
+device.
+
+The secure defaults are designed as a production-oriented baseline intended
+to support ASVS Level 3 practices. Defaults do not certify a deployment or
+guarantee that it meets ASVS Level 3: configuration choices, integrations,
+operations, and independent verification still matter. Disabling a control
+changes the protections active in that deployment and may affect its security
+assessment. Choose settings for the users and risks involved; JAVARA provides
+the controls and explains their effects, while the deployment owner decides
+which behavior is appropriate.
+
+Successful authenticated requests and successful refreshes update the
+server-recorded last-activity time. This measures request activity, not
+keyboard or mouse activity; background polling or token refreshes can keep a
+session active while the user is away.
+
+```yaml
+app:
+  security:
+    session:
+      idle-timeout-enabled: true
+      idle-timeout: 15m
+      absolute-lifetime-enabled: true
+      absolute-lifetime: 12h
+      max-concurrent-sessions: 5
+```
+
 Never commit signing keys or passwords.
 
 The browser adapter is one optional client module under `sdk/browser`; it does
@@ -273,9 +421,15 @@ not change the HTTP API contract for native or service clients. Service-to-
 service authentication is a separate OAuth 2.0 Client Credentials flow and
 does not use user refresh tokens.
 
-Refresh tokens rotate on refresh. The client must replace the old refresh
-token with the newly returned one. Password changes revoke active refresh
-tokens; already-issued access tokens remain valid until their short expiry.
+When refresh-token rotation is enabled, the client must replace the old
+refresh token with the newly returned one. When disabled, keep using the same
+refresh token; only the access token changes. Protected requests validate the
+access token's active server-side session, so logout, password changes, account
+disablement/deletion, and session termination reject an already-issued access
+token on its next protected request. An access-token `401` does not always mean
+the user must sign in: refresh may succeed if the session is still valid. The
+API guide's [token-expiry scenarios](api-usage.md#what-happens-when-a-token-expires)
+describes what clients should do for each outcome.
 
 ## Multi-factor authentication
 
@@ -372,8 +526,16 @@ separately with `make security-setup`; this writes only to the ignored
 `config/security.yml` and adds its optional import to
 `config/application.yml`. `make setup` and `make install` remain focused on
 initial application configuration. Deployment configuration can override
-security settings without changing Java code. All four signals are enabled by
-default:
+security settings without changing Java code. The wizard also lets a
+deployment configure session idle expiry, maximum session duration, and the
+maximum concurrent sessions per user. Idle expiry defaults to enabled at 15
+minutes; it can be disabled or set to a different duration. The maximum session
+duration is enabled by default at 12 hours and can be disabled. When disabled,
+the refresh-token TTL becomes the session's fixed maximum lifetime from login.
+When enabled, the configured maximum session duration cannot exceed 12 hours.
+In the YAML configuration, this option is named `absolute-lifetime-enabled`.
+All four
+suspicious-authentication signals are enabled by default:
 
 1. Repeated failed password sign-ins (5 attempts in 10 minutes by default).
 2. A successful sign-in from a different network source than the last successful
@@ -385,6 +547,12 @@ default:
 # config/security.yml
 app:
   security:
+    session:
+      idle-timeout-enabled: true
+      idle-timeout: 15m
+      absolute-lifetime-enabled: true
+      absolute-lifetime: 12h
+      max-concurrent-sessions: 5
     suspicious-authentication:
       enabled: true
       failed-login:

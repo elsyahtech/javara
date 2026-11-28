@@ -24,9 +24,9 @@ the evidence is meaningful.
   customer-ready release, including user and service-client flows.
 - [ ] Confirm which jurisdictions and customer/regulatory overlays are in
   scope for the first release.
-- [ ] Review the proposed shared-tenant identity model:
-  [tenant-model.md](tenant-model.md). One global user may belong to multiple
-  companies; membership roles and tenant context still need design approval.
+- [ ] Review the selected tenancy and role foundation:
+  [tenant-model.md](tenant-model.md). `SINGLE` is supported; shared mode,
+  tenant context, and tenant-scoped data isolation remain incomplete.
 
 ## Needed from architecture and engineering owners
 

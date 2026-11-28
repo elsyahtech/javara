@@ -75,7 +75,7 @@ unredacted production configuration in this repository or assessment evidence.
 
 | Decision | Current status | Required outcome |
 |---|---|---|
-| Multi-company isolation model | Shared multi-tenant selected on 2026-11-24; implementation not verified | Define tenant boundaries and isolation guarantees; verify them with architecture evidence and tests. |
+| Multi-company isolation model | `SINGLE` supported; `SHARED` selected as a future target but rejected at startup | Implement tenant context and end-to-end isolation, then verify every tenant-owned access path with cross-tenant tests. |
 | Supported customer deployment profiles | Open | Define supported environments and responsibility boundaries between JAVARA and each customer. |
 | Industry and jurisdiction overlays | Open | Identify applicable requirements per customer use case; do not infer them from ASVS. |
 | Independent assessment scope | Open | Agree assessor, target release, environment, methods, and report expectations. |

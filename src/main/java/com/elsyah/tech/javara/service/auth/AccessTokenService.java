@@ -54,7 +54,6 @@ public class AccessTokenService {
                 .claim("auth_time", authenticatedAt.getEpochSecond())
                 .claim("amr", List.copyOf(authenticationMethods))
                 .claim("email", user.getEmail())
-                .claim("roles", List.of(user.getRole().name()))
                 .build();
         JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).build();
         return jwtEncoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();

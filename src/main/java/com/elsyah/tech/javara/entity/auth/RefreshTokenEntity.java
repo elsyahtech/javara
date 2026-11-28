@@ -1,37 +1,26 @@
 package com.elsyah.tech.javara.entity.auth;
 
 import java.time.Instant;
-import java.util.UUID;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import java.util.UUID;
 
 @Entity
-@Table(name = "refresh_tokens")
+@Table(name = "javara_refresh_tokens")
 public class RefreshTokenEntity {
     @Id
     @Column(name = "token_hash", nullable = false, length = 64)
     private String tokenHash;
 
-    @Column(name = "user_id", nullable = false)
-    private UUID userId;
-
-    @Column(name = "session_id", nullable = false)
-    private UUID sessionId;
-
-    @Column(name = "session_started_at", nullable = false, updatable = false)
-    private Instant sessionStartedAt;
-
-    @Column(name = "last_activity_at", nullable = false)
-    private Instant lastActivityAt;
-
-    @Column(name = "session_expires_at", nullable = false, updatable = false)
-    private Instant sessionExpiresAt;
-
-    @Column(name = "authentication_methods", nullable = false, length = 100)
-    private String authenticationMethods = "pwd";
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "session_id", nullable = false)
+    private UserSessionEntity session;
 
     @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
@@ -45,25 +34,15 @@ public class RefreshTokenEntity {
     public String getTokenHash() { return tokenHash; }
     public void setTokenHash(String tokenHash) { this.tokenHash = tokenHash; }
 
-    public UUID getUserId() { return userId; }
-    public void setUserId(UUID userId) { this.userId = userId; }
+    public UserSessionEntity getSession() { return session; }
+    public void setSession(UserSessionEntity session) { this.session = session; }
 
-    public UUID getSessionId() { return sessionId; }
-    public void setSessionId(UUID sessionId) { this.sessionId = sessionId; }
-
-    public Instant getSessionStartedAt() { return sessionStartedAt; }
-    public void setSessionStartedAt(Instant sessionStartedAt) { this.sessionStartedAt = sessionStartedAt; }
-
-    public Instant getLastActivityAt() { return lastActivityAt; }
-    public void setLastActivityAt(Instant lastActivityAt) { this.lastActivityAt = lastActivityAt; }
-
-    public Instant getSessionExpiresAt() { return sessionExpiresAt; }
-    public void setSessionExpiresAt(Instant sessionExpiresAt) { this.sessionExpiresAt = sessionExpiresAt; }
-
-    public String getAuthenticationMethods() { return authenticationMethods; }
-    public void setAuthenticationMethods(String authenticationMethods) {
-        this.authenticationMethods = authenticationMethods;
-    }
+    public UUID getUserId() { return session.getUserId(); }
+    public UUID getSessionId() { return session.getId(); }
+    public Instant getSessionStartedAt() { return session.getStartedAt(); }
+    public Instant getLastActivityAt() { return session.getLastActivityAt(); }
+    public Instant getSessionExpiresAt() { return session.getExpiresAt(); }
+    public String getAuthenticationMethods() { return session.getAuthenticationMethods(); }
 
     public Instant getExpiresAt() { return expiresAt; }
     public void setExpiresAt(Instant expiresAt) { this.expiresAt = expiresAt; }

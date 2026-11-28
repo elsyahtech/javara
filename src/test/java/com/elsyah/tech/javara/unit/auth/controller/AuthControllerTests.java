@@ -38,6 +38,7 @@ import com.elsyah.tech.javara.middleware.security.TokenTransport;
 import com.elsyah.tech.javara.request.auth.LoginRequest;
 import com.elsyah.tech.javara.request.auth.PasswordChangeRequest;
 import com.elsyah.tech.javara.request.auth.RegisterRequest;
+import com.elsyah.tech.javara.request.auth.RefreshTokenRequest;
 import com.elsyah.tech.javara.request.user.UserRequest;
 import com.elsyah.tech.javara.response.common.ApiResponse;
 import com.elsyah.tech.javara.response.auth.AuthTokenResponse;
@@ -47,6 +48,7 @@ import com.elsyah.tech.javara.response.user.UserResponse;
 import com.elsyah.tech.javara.service.auth.AuthService;
 import com.elsyah.tech.javara.service.auth.AuthServiceResult;
 import com.elsyah.tech.javara.service.auth.MfaService;
+import com.elsyah.tech.javara.service.user.UserRoleService;
 import com.elsyah.tech.javara.service.auth.PasswordResetService;
 import com.elsyah.tech.javara.service.common.ServiceResult;
 import com.elsyah.tech.javara.service.email.EmailVerificationService;
@@ -220,7 +222,8 @@ class AuthControllerTests {
                     false,
                     "None",
                     "ACCESS_TOKEN",
-                    "REFRESH_TOKEN");
+                    "REFRESH_TOKEN",
+                    null);
         } catch (IllegalArgumentException exception) {
             rejected = true;
         }
@@ -246,6 +249,33 @@ class AuthControllerTests {
                         .login(request);
 
         assertNull(response.getHeaders().get(HttpHeaders.SET_COOKIE));
+    }
+
+    @Test
+    void cookieRefreshDoesNotReplaceRefreshCookieWhenRotationIsDisabled() {
+        UserService userService = mock(UserService.class);
+        AuthService authService = mock(AuthService.class);
+        JwtProperties properties = jwtProperties(TokenTransport.COOKIE, false);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setCookies(new Cookie("REFRESH_TOKEN", "refresh-token"));
+        when(authService.refresh("refresh-token")).thenReturn(new AuthServiceResult(
+                user("user-1"),
+                "new-access-token",
+                "refresh-token",
+                HttpStatus.OK,
+                "Token refreshed"));
+
+        ResponseEntity<ApiResponse<AuthTokenResponse>> response =
+                controller(userService, authService, properties).refresh(
+                        new RefreshTokenRequest("ignored-body-token"), request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(1, response.getHeaders().get(HttpHeaders.SET_COOKIE).size());
+        assertTrue(response.getHeaders().get(HttpHeaders.SET_COOKIE).getFirst()
+                .startsWith("ACCESS_TOKEN="));
+        assertFalse(response.getHeaders().get(HttpHeaders.SET_COOKIE).stream()
+                .anyMatch(cookie -> cookie.startsWith("REFRESH_TOKEN=")));
+        verify(authService).refresh("refresh-token");
     }
 
     // Verifies that cookie logout clears client cookies even when refresh-token revocation fails.
@@ -358,10 +388,16 @@ class AuthControllerTests {
                 mock(PasswordResetService.class),
                 mock(MfaService.class),
                 properties,
-                new ApplicationIdentityProperties("Test Application"));
+                new ApplicationIdentityProperties("Test Application"),
+                mock(UserRoleService.class));
     }
 
     private static JwtProperties jwtProperties(TokenTransport transport) {
+        return jwtProperties(transport, null);
+    }
+
+    private static JwtProperties jwtProperties(
+            TokenTransport transport, Boolean refreshTokenRotationEnabled) {
         return new JwtProperties(
                 Base64.getEncoder().encodeToString(new byte[32]),
                 transport,
@@ -370,7 +406,8 @@ class AuthControllerTests {
                 true,
                 "Strict",
                 "ACCESS_TOKEN",
-                "REFRESH_TOKEN");
+                "REFRESH_TOKEN",
+                refreshTokenRotationEnabled);
     }
 
     private static UUID uuid(String value) {

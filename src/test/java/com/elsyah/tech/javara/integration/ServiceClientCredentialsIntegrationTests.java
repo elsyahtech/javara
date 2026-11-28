@@ -24,6 +24,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.test.web.servlet.MockMvc;
@@ -33,10 +34,11 @@ import tools.jackson.databind.ObjectMapper;
 
 import com.elsyah.tech.javara.entity.user.UserEntity;
 import com.elsyah.tech.javara.entity.user.UserRole;
-import com.elsyah.tech.javara.middleware.security.ApiSecurityConfiguration;
 import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
+import com.elsyah.tech.javara.repository.auth.UserSessionRepository;
 import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.service.auth.AccessTokenService;
+import com.elsyah.tech.javara.service.user.UserRoleService;
 import com.elsyah.tech.javara.testsupport.PostgresRedisTestSupport;
 import com.elsyah.tech.javara.testsupport.SessionTokenTestSupport;
 import com.elsyah.tech.javara.utils.security.PasswordHashService;
@@ -59,7 +61,7 @@ class ServiceClientCredentialsIntegrationTests extends PostgresRedisTestSupport 
     private JwtDecoder jwtDecoder;
 
     @Autowired
-    private ApiSecurityConfiguration apiSecurityConfiguration;
+    private JwtAuthenticationConverter jwtAuthenticationConverter;
 
     @Autowired
     private RegisteredClientRepository registeredClientRepository;
@@ -72,6 +74,12 @@ class ServiceClientCredentialsIntegrationTests extends PostgresRedisTestSupport 
 
     @Autowired
     private RefreshTokenRepository refreshTokenRepository;
+
+    @Autowired
+    private UserSessionRepository userSessionRepository;
+
+    @Autowired
+    private UserRoleService userRoleService;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -157,7 +165,7 @@ class ServiceClientCredentialsIntegrationTests extends PostgresRedisTestSupport 
         assertTrue(decoded.getClaimAsStringList("scope").contains("service.read"));
 
         AbstractAuthenticationToken serviceAuthentication =
-                apiSecurityConfiguration.jwtAuthenticationConverter().convert(decoded);
+                jwtAuthenticationConverter.convert(decoded);
         assertNotNull(serviceAuthentication);
         assertTrue(serviceAuthentication.getAuthorities().stream()
                 .anyMatch(authority -> authority.getAuthority().equals("SCOPE_service.read")));
@@ -228,14 +236,16 @@ class ServiceClientCredentialsIntegrationTests extends PostgresRedisTestSupport 
         UserEntity user = new UserEntity();
         user.setId(UUID.randomUUID());
         user.setEmail("service-auth-" + UUID.randomUUID() + "@example.com");
-        user.setRole(role);
         createdUserIds.add(user.getId());
         return SessionTokenTestSupport.issueAccessToken(
                 user,
                 userRepository,
+                userRoleService,
+                userSessionRepository,
                 refreshTokenRepository,
                 accessTokenService,
-                passwordHashService);
+                passwordHashService,
+                List.of(role.name()));
     }
 
     private static String basic(String clientId, String secret) {

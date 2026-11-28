@@ -33,7 +33,7 @@ public class ServiceClientController {
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('service-clients:manage')")
     public ResponseEntity<ApiResponse<ProvisionedServiceClientResponse>> provision(
             @Valid @RequestBody CreateServiceClientRequest request) {
         ProvisionedServiceClientResponse client = service.provision(request);
@@ -42,7 +42,7 @@ public class ServiceClientController {
     }
 
     @PostMapping("/{clientId}/rotate")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('service-clients:manage')")
     public ApiResponse<ProvisionedServiceClientResponse> rotate(@PathVariable String clientId) {
         return ApiResponse.success(
                 HttpStatus.OK,
@@ -51,7 +51,7 @@ public class ServiceClientController {
     }
 
     @DeleteMapping("/{clientId}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('service-clients:manage')")
     public ResponseEntity<Void> revoke(@PathVariable String clientId) {
         service.revoke(clientId);
         return ResponseEntity.noContent().build();

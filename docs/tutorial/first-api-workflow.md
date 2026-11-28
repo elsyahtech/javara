@@ -68,8 +68,8 @@ accounts; those routes are reserved for ADMIN.
 
 ## 5. Refresh the session
 
-Refresh rotates the refresh token. The response returns a new access token
-and a new refresh token:
+With the default refresh-token rotation setting, refresh returns a new access
+token and a new refresh token:
 
 ```bash
 curl -i -X POST http://localhost:8080/api/v1/auth/refresh \
@@ -77,8 +77,11 @@ curl -i -X POST http://localhost:8080/api/v1/auth/refresh \
   -d "{\"refreshToken\":\"$REFRESH_TOKEN\"}"
 ```
 
-Replace **both** shell variables with the new `data.accessToken` and
-`data.refreshToken` values. Do not keep using the old refresh token.
+Always replace `ACCESS_TOKEN` with the returned `data.accessToken`. When
+rotation is enabled, also replace `REFRESH_TOKEN` with the returned
+`data.refreshToken` and discard the old refresh token. If rotation is disabled
+in `make security-setup`, the refresh token remains unchanged; only the access
+token needs replacing.
 
 ## 6. Log out
 

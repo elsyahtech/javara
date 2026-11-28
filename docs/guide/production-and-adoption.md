@@ -10,7 +10,8 @@ your product before using real accounts or sensitive data.
 - PostgreSQL-backed user records and Flyway migrations
 - Public USER registration and configurable initial ADMIN setup
 - Bearer-token or HttpOnly-cookie authentication
-- Rotating, revocable refresh tokens
+- Refresh-token rotation and revocation (rotation enabled by default and
+  configurable through `make security-setup`)
 - Password hashing and legacy-hash upgrade support
 - USER/ADMIN authorization and same-user checks for ID-based operations
 - Redis-based per-IP limits for login, registration, and refresh

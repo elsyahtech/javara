@@ -403,12 +403,12 @@ database_check="$(
             --port="$db_port" \
             --username="$db_user" \
             --dbname="$db_name" \
-            --command="SELECT (to_regclass('public.refresh_tokens') IS NOT NULL AND to_regclass('public.flyway_schema_history') IS NOT NULL)::text || '|' || current_setting('server_version_num')"
+            --command="SELECT (to_regclass('public.javara_refresh_tokens') IS NOT NULL AND to_regclass('public.flyway_schema_history') IS NOT NULL)::text || '|' || current_setting('server_version_num')"
 )"
 schema_check="${database_check%%|*}"
 server_version_num="${database_check#*|}"
 if [[ "$schema_check" != "true" ]]; then
-    printf '%s\n' "The selected database is not a migrated JAVARA database (refresh_tokens/Flyway history missing)." >&2
+    printf '%s\n' "The selected database is not a migrated JAVARA database (javara_refresh_tokens/Flyway history missing)." >&2
     exit 1
 fi
 if [[ ! "$server_version_num" =~ ^[0-9]+$ ]]; then

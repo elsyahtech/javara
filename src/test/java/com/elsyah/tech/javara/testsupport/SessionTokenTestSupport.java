@@ -7,13 +7,17 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.UUID;
 
 import com.elsyah.tech.javara.entity.auth.RefreshTokenEntity;
+import com.elsyah.tech.javara.entity.auth.UserSessionEntity;
 import com.elsyah.tech.javara.entity.user.UserEntity;
 import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
+import com.elsyah.tech.javara.repository.auth.UserSessionRepository;
 import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.service.auth.AccessTokenService;
+import com.elsyah.tech.javara.service.user.UserRoleService;
 import com.elsyah.tech.javara.utils.security.PasswordHashService;
 
 public final class SessionTokenTestSupport {
@@ -24,25 +28,38 @@ public final class SessionTokenTestSupport {
     public static String issueAccessToken(
             UserEntity user,
             UserRepository userRepository,
+            UserRoleService userRoleService,
+            UserSessionRepository userSessionRepository,
             RefreshTokenRepository refreshTokenRepository,
             AccessTokenService accessTokenService,
-            PasswordHashService passwordHashService) {
+            PasswordHashService passwordHashService,
+            List<String> roleKeys) {
         if (user.getPassword() == null) {
             user.setPassword(passwordHashService.encode("test-only-password"));
         }
         user.setIsActive(true);
+        boolean newUser = !userRepository.existsById(user.getId());
         UserEntity persistedUser = userRepository.saveAndFlush(user);
+        if (newUser) {
+            userRoleService.assignInitialRoles(persistedUser.getId(), roleKeys);
+        }
 
         Instant now = Instant.now();
         UUID sessionId = UUID.randomUUID();
         String rawRefreshToken = newRefreshToken();
+        UserSessionEntity session = new UserSessionEntity();
+        session.setId(sessionId);
+        session.setUserId(persistedUser.getId());
+        session.setStartedAt(now);
+        session.setLastActivityAt(now);
+        session.setExpiresAt(now.plus(Duration.ofHours(12)));
+        session.setAuthenticationMethods("pwd");
+        session.setCreatedAt(now);
+        UserSessionEntity persistedSession = userSessionRepository.saveAndFlush(session);
+
         RefreshTokenEntity refreshToken = new RefreshTokenEntity();
         refreshToken.setTokenHash(hash(rawRefreshToken));
-        refreshToken.setUserId(persistedUser.getId());
-        refreshToken.setSessionId(sessionId);
-        refreshToken.setSessionStartedAt(now);
-        refreshToken.setLastActivityAt(now);
-        refreshToken.setSessionExpiresAt(now.plus(Duration.ofHours(12)));
+        refreshToken.setSession(persistedSession);
         refreshToken.setCreatedAt(now);
         refreshToken.setExpiresAt(now.plus(Duration.ofHours(12)));
         refreshTokenRepository.saveAndFlush(refreshToken);

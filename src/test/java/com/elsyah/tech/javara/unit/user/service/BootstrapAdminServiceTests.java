@@ -8,7 +8,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
@@ -20,6 +22,7 @@ import com.elsyah.tech.javara.middleware.config.ApplicationIdentityProperties;
 import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.service.user.BootstrapAdminService;
 import com.elsyah.tech.javara.service.user.PasswordPolicyService;
+import com.elsyah.tech.javara.service.user.UserRoleService;
 import com.elsyah.tech.javara.utils.security.PasswordHashService;
 
 class BootstrapAdminServiceTests {
@@ -33,31 +36,34 @@ class BootstrapAdminServiceTests {
     @Test
     void createsInitialAdminWhenEmailIsUnused() {
         UserRepository repository = mock(UserRepository.class);
+        UserRoleService roleService = mock(UserRoleService.class);
         PasswordHashService passwordHashService = new PasswordHashService("ARGON2");
         when(repository.findByEmail("admin@example.com")).thenReturn(Optional.empty());
+        when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         new BootstrapAdminService(
                         repository,
                         passwordHashService,
                         allowedPasswordPolicy(),
+                        roleService,
                         applicationIdentity())
                 .createInitialAdmin("admin@example.com", "admin-password");
 
         ArgumentCaptor<UserEntity> userCaptor = forClass(UserEntity.class);
         verify(repository).saveAndFlush(userCaptor.capture());
         UserEntity admin = userCaptor.getValue();
-        assertEquals(UserRole.ADMIN, admin.getRole());
         assertEquals("admin@example.com", admin.getEmail());
         assertTrue(admin.isEmailVerified());
         assertTrue(passwordHashService.matches("admin-password", admin.getPassword()));
+        verify(roleService).assignInitialRoles(admin.getId(), List.of("ADMIN"));
     }
 
     // Verifies that bootstrap refuses to promote an existing regular user.
     @Test
     void refusesToPromoteAnExistingUser() {
         UserRepository repository = mock(UserRepository.class);
+        UserRoleService roleService = mock(UserRoleService.class);
         UserEntity existing = new UserEntity();
-        existing.setRole(UserRole.USER);
         when(repository.findByEmail("user@example.com")).thenReturn(Optional.of(existing));
 
         assertThrows(
@@ -66,6 +72,7 @@ class BootstrapAdminServiceTests {
                                 repository,
                                 new PasswordHashService("ARGON2"),
                                 allowedPasswordPolicy(),
+                                roleService,
                                 applicationIdentity())
                         .createInitialAdmin("user@example.com", "admin-password"));
         verify(repository, never()).saveAndFlush(existing);
@@ -75,14 +82,16 @@ class BootstrapAdminServiceTests {
     @Test
     void existingAdminMakesBootstrapIdempotent() {
         UserRepository repository = mock(UserRepository.class);
+        UserRoleService roleService = mock(UserRoleService.class);
         UserEntity existing = new UserEntity();
-        existing.setRole(UserRole.ADMIN);
         when(repository.findByEmail("admin@example.com")).thenReturn(Optional.of(existing));
+        when(repository.hasPermission(null, "users:manage")).thenReturn(true);
 
         new BootstrapAdminService(
                         repository,
                         new PasswordHashService("ARGON2"),
                         allowedPasswordPolicy(),
+                        roleService,
                         applicationIdentity())
                 .createInitialAdmin("admin@example.com", "admin-password");
 
@@ -92,6 +101,7 @@ class BootstrapAdminServiceTests {
     @Test
     void refusesCommonOrBreachedBootstrapPassword() {
         UserRepository repository = mock(UserRepository.class);
+        UserRoleService roleService = mock(UserRoleService.class);
         PasswordPolicyService policy = mock(PasswordPolicyService.class);
         when(repository.findByEmail("admin@example.com")).thenReturn(Optional.empty());
         when(policy.isPasswordAllowed("compromised-password")).thenReturn(false);
@@ -102,6 +112,7 @@ class BootstrapAdminServiceTests {
                                 repository,
                                 new PasswordHashService("ARGON2"),
                                 policy,
+                                roleService,
                                 applicationIdentity())
                         .createInitialAdmin("admin@example.com", "compromised-password"));
 

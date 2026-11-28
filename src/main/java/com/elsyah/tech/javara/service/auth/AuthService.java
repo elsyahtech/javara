@@ -19,10 +19,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.elsyah.tech.javara.entity.auth.MfaMethod;
 import com.elsyah.tech.javara.entity.auth.RefreshTokenEntity;
+import com.elsyah.tech.javara.entity.auth.UserSessionEntity;
 import com.elsyah.tech.javara.entity.user.UserEntity;
 import com.elsyah.tech.javara.middleware.security.JwtProperties;
 import com.elsyah.tech.javara.middleware.security.SessionProperties;
 import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
+import com.elsyah.tech.javara.repository.auth.UserSessionRepository;
 import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.request.auth.LoginRequest;
 import com.elsyah.tech.javara.response.auth.MfaChallengeResponse;
@@ -42,6 +44,8 @@ public class AuthService {
     private final UserService userService;
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final UserSessionRepository userSessionRepository;
+    private final SessionRevocationService sessionRevocationService;
     private final AccessTokenService accessTokenService;
     private final JwtProperties jwtProperties;
     private final SessionProperties sessionProperties;
@@ -54,6 +58,8 @@ public class AuthService {
             UserService userService,
             UserRepository userRepository,
             RefreshTokenRepository refreshTokenRepository,
+            UserSessionRepository userSessionRepository,
+            SessionRevocationService sessionRevocationService,
             AccessTokenService accessTokenService,
             JwtProperties jwtProperties,
             SessionProperties sessionProperties,
@@ -64,6 +70,8 @@ public class AuthService {
         this.userService = userService;
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
+        this.userSessionRepository = userSessionRepository;
+        this.sessionRevocationService = sessionRevocationService;
         this.accessTokenService = accessTokenService;
         this.jwtProperties = jwtProperties;
         this.sessionProperties = sessionProperties;
@@ -196,34 +204,48 @@ public class AuthService {
         }
 
         RefreshTokenEntity token = storedToken.get();
+        UserSessionEntity session = userSessionRepository.findByIdAndUserIdForUpdate(
+                        token.getSession().getId(), userId)
+                .orElse(null);
+        if (session == null) {
+            return invalidRefreshToken();
+        }
         if (token.getRevokedAt() != null) {
-            revokeActiveTokens(token.getUserId(), now);
+            if (jwtProperties.refreshTokenRotationEnabled()) {
+                revokeActiveTokens(userId, now);
+            }
             return invalidRefreshToken();
         }
         Instant idleDeadline = now.minus(sessionProperties.idleTimeout());
+        boolean idleExpired = sessionProperties.idleTimeoutEnabled()
+                && !session.getLastActivityAt().isAfter(idleDeadline);
         if (!token.getExpiresAt().isAfter(now)
-                || !token.getSessionExpiresAt().isAfter(now)
-                || !token.getLastActivityAt().isAfter(idleDeadline)) {
+                || session.getRevokedAt() != null
+                || !session.getExpiresAt().isAfter(now)
+                || idleExpired) {
             token.setRevokedAt(now);
-            refreshTokenRepository.revokeActiveTokensForSession(
-                    token.getSessionId(), userId, now);
+            sessionRevocationService.revokeSession(session.getId(), userId, now);
             return invalidRefreshToken();
         }
 
         if (optionalUser.isEmpty() || !Boolean.TRUE.equals(optionalUser.get().getIsActive())) {
             token.setRevokedAt(now);
-            revokeActiveTokens(token.getUserId(), now);
+            revokeActiveTokens(userId, now);
             return invalidRefreshToken();
         }
 
-        token.setRevokedAt(now);
+        session.setLastActivityAt(now);
+        boolean rotateRefreshToken = jwtProperties.refreshTokenRotationEnabled();
+        if (rotateRefreshToken) {
+            token.setRevokedAt(now);
+        }
         return issueTokens(
                 optionalUser.get(),
-                token.getSessionId(),
-                token.getSessionStartedAt(),
-                token.getSessionExpiresAt(),
-                storedAuthenticationMethods(token),
-                "Token refreshed successfully");
+                session,
+                storedAuthenticationMethods(session),
+                "Token refreshed successfully",
+                rotateRefreshToken ? newRefreshToken() : rawRefreshToken,
+                rotateRefreshToken);
     }
 
     @Transactional
@@ -239,40 +261,52 @@ public class AuthService {
         }
 
         RefreshTokenEntity token = storedToken.get();
-        if (token.getRevokedAt() == null) {
-            refreshTokenRepository.revokeActiveTokensForSession(
-                    token.getSessionId(), token.getUserId(), clock.instant());
-        }
+        sessionRevocationService.revokeSession(
+                token.getSession().getId(),
+                token.getSession().getUserId(),
+                clock.instant());
         return true;
     }
 
     private AuthServiceResult issueTokens(
             UserEntity user,
-            UUID sessionId,
-            Instant sessionStartedAt,
-            Instant sessionExpiresAt,
+            UserSessionEntity session,
             List<String> authenticationMethods,
             String message) {
-        String rawRefreshToken = newRefreshToken();
+        return issueTokens(
+                user,
+                session,
+                authenticationMethods,
+                message,
+                newRefreshToken(),
+                true);
+    }
+
+    private AuthServiceResult issueTokens(
+            UserEntity user,
+            UserSessionEntity session,
+            List<String> authenticationMethods,
+            String message,
+            String rawRefreshToken,
+            boolean persistRefreshToken) {
         Instant now = clock.instant();
-        RefreshTokenEntity storedToken = new RefreshTokenEntity();
-        storedToken.setTokenHash(hashToken(rawRefreshToken));
-        storedToken.setUserId(user.getId());
-        storedToken.setSessionId(sessionId);
-        storedToken.setSessionStartedAt(sessionStartedAt);
-        storedToken.setLastActivityAt(now);
-        storedToken.setSessionExpiresAt(sessionExpiresAt);
-        storedToken.setAuthenticationMethods(String.join(",", authenticationMethods));
-        storedToken.setCreatedAt(now);
-        storedToken.setExpiresAt(min(
-                now.plus(jwtProperties.refreshTokenTtl()),
-                sessionExpiresAt));
-        refreshTokenRepository.save(storedToken);
+        session.setLastActivityAt(now);
+        UserSessionEntity savedSession = userSessionRepository.save(session);
+        if (persistRefreshToken) {
+            RefreshTokenEntity storedToken = new RefreshTokenEntity();
+            storedToken.setTokenHash(hashToken(rawRefreshToken));
+            storedToken.setSession(savedSession);
+            storedToken.setCreatedAt(now);
+            storedToken.setExpiresAt(min(
+                    now.plus(jwtProperties.refreshTokenTtl()),
+                    session.getExpiresAt()));
+            refreshTokenRepository.save(storedToken);
+        }
 
         return new AuthServiceResult(
                 user,
                 accessTokenService.issue(
-                        user, sessionId, sessionStartedAt, authenticationMethods),
+                        user, session.getId(), session.getStartedAt(), authenticationMethods),
                 rawRefreshToken,
                 HttpStatus.OK,
                 message);
@@ -281,9 +315,10 @@ public class AuthService {
     private AuthServiceResult issueLoginTokens(
             UserEntity user, List<String> authenticationMethods, String remoteAddress) {
         Instant now = clock.instant();
-        long activeSessions = refreshTokenRepository.countActiveSessions(
+        long activeSessions = userSessionRepository.countActiveSessions(
                 user.getId(),
                 now,
+                sessionProperties.idleTimeoutEnabled(),
                 now.minus(sessionProperties.idleTimeout()));
         if (activeSessions >= sessionProperties.maxConcurrentSessions()) {
             return AuthServiceResult.failure(
@@ -295,13 +330,17 @@ public class AuthService {
                     HttpStatus.UNAUTHORIZED,
                     "Invalid email or password");
         }
+        UserSessionEntity session = new UserSessionEntity();
+        session.setId(UUID.randomUUID());
+        session.setUserId(user.getId());
+        session.setStartedAt(now);
+        session.setLastActivityAt(now);
+        session.setExpiresAt(now.plus(
+                sessionProperties.sessionLifetime(jwtProperties.refreshTokenTtl())));
+        session.setAuthenticationMethods(String.join(",", authenticationMethods));
+        session.setCreatedAt(now);
         AuthServiceResult result = issueTokens(
-                user,
-                UUID.randomUUID(),
-                now,
-                now.plus(sessionProperties.absoluteLifetime()),
-                authenticationMethods,
-                "Login successful");
+                user, session, authenticationMethods, "Login successful");
         emailNotificationService.newSession(user.getEmail());
         return result;
     }
@@ -324,15 +363,15 @@ public class AuthService {
         return issueLoginTokens(optionalUser.get(), List.of("pwd", method), remoteAddress);
     }
 
-    private static List<String> storedAuthenticationMethods(RefreshTokenEntity token) {
-        String methods = token.getAuthenticationMethods();
+    private static List<String> storedAuthenticationMethods(UserSessionEntity session) {
+        String methods = session.getAuthenticationMethods();
         return methods == null || methods.isBlank()
                 ? List.of("pwd")
                 : List.of(methods.split(","));
     }
 
     private void revokeActiveTokens(UUID userId, Instant revokedAt) {
-        refreshTokenRepository.revokeActiveTokensForUser(userId, revokedAt);
+        sessionRevocationService.revokeAllForUser(userId, revokedAt);
     }
 
     private static Instant min(Instant first, Instant second) {

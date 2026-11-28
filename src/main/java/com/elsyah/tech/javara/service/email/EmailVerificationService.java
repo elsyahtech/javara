@@ -21,8 +21,8 @@ import com.elsyah.tech.javara.entity.auth.EmailVerificationTokenEntity;
 import com.elsyah.tech.javara.entity.user.UserEntity;
 import com.elsyah.tech.javara.middleware.email.EmailSettings;
 import com.elsyah.tech.javara.repository.auth.EmailVerificationTokenRepository;
-import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
 import com.elsyah.tech.javara.repository.user.UserRepository;
+import com.elsyah.tech.javara.service.auth.SessionRevocationService;
 import com.elsyah.tech.javara.service.common.ServiceResult;
 
 @Service
@@ -36,7 +36,7 @@ public class EmailVerificationService {
 
     private final EmailVerificationTokenRepository tokenRepository;
     private final UserRepository userRepository;
-    private final RefreshTokenRepository refreshTokenRepository;
+    private final SessionRevocationService sessionRevocationService;
     private final EmailNotificationService emailNotificationService;
     private final EmailSettings settings;
     private final Clock clock;
@@ -44,13 +44,13 @@ public class EmailVerificationService {
     public EmailVerificationService(
             EmailVerificationTokenRepository tokenRepository,
             UserRepository userRepository,
-            RefreshTokenRepository refreshTokenRepository,
+            SessionRevocationService sessionRevocationService,
             EmailNotificationService emailNotificationService,
             EmailSettings settings,
             Clock clock) {
         this.tokenRepository = tokenRepository;
         this.userRepository = userRepository;
-        this.refreshTokenRepository = refreshTokenRepository;
+        this.sessionRevocationService = sessionRevocationService;
         this.emailNotificationService = emailNotificationService;
         this.settings = settings;
         this.clock = clock;
@@ -120,7 +120,7 @@ public class EmailVerificationService {
             user.setEmail(newEmail);
             user.setPendingEmail(null);
             user.setEmailVerified(true);
-            refreshTokenRepository.revokeActiveTokensForUser(user.getId(), now);
+            sessionRevocationService.revokeAllForUser(user.getId(), now);
             emailNotificationService.emailChanged(oldEmail);
         }
         user.setUpdatedAt(now);

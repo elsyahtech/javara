@@ -15,74 +15,33 @@ import com.elsyah.tech.javara.entity.auth.RefreshTokenEntity;
 import jakarta.persistence.LockModeType;
 
 public interface RefreshTokenRepository extends JpaRepository<RefreshTokenEntity, String> {
+    @Query("""
+            SELECT token
+            FROM RefreshTokenEntity token
+            JOIN FETCH token.session
+            WHERE token.session.userId = :userId
+              AND token.revokedAt IS NULL
+            """)
+    List<RefreshTokenEntity> findByUserIdAndRevokedAtIsNull(@Param("userId") UUID userId);
+
+    @Modifying
+    @Transactional
+    @Query("DELETE FROM RefreshTokenEntity t WHERE t.session.userId = :userId")
+    int deleteByUserId(@Param("userId") UUID userId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT t FROM RefreshTokenEntity t WHERE t.tokenHash = :tokenHash")
     Optional<RefreshTokenEntity> findByTokenHashForUpdate(@Param("tokenHash") String tokenHash);
 
-    @Query("SELECT t.userId FROM RefreshTokenEntity t WHERE t.tokenHash = :tokenHash")
+    @Query("SELECT t.session.userId FROM RefreshTokenEntity t WHERE t.tokenHash = :tokenHash")
     Optional<UUID> findUserIdByTokenHash(@Param("tokenHash") String tokenHash);
-
-    List<RefreshTokenEntity> findByUserIdAndRevokedAtIsNull(UUID userId);
-
-    @Transactional
-    long deleteByUserId(UUID userId);
-
-    @Query("""
-            SELECT COUNT(DISTINCT t.sessionId)
-            FROM RefreshTokenEntity t
-            WHERE t.userId = :userId
-              AND t.revokedAt IS NULL
-              AND t.expiresAt > :now
-              AND t.sessionExpiresAt > :now
-              AND t.lastActivityAt > :idleDeadline
-            """)
-    long countActiveSessions(
-            @Param("userId") UUID userId,
-            @Param("now") Instant now,
-            @Param("idleDeadline") Instant idleDeadline);
-
-    @Query("""
-            SELECT t
-            FROM RefreshTokenEntity t
-            WHERE t.userId = :userId
-              AND t.revokedAt IS NULL
-              AND t.expiresAt > :now
-              AND t.sessionExpiresAt > :now
-              AND t.lastActivityAt > :idleDeadline
-            ORDER BY t.sessionStartedAt DESC
-            """)
-    List<RefreshTokenEntity> findActiveSessions(
-            @Param("userId") UUID userId,
-            @Param("now") Instant now,
-            @Param("idleDeadline") Instant idleDeadline);
-
-    @Modifying
-    @Query(value = """
-            UPDATE refresh_tokens t
-            SET last_activity_at = :now
-            FROM users u
-            WHERE t.session_id = :sessionId
-              AND t.user_id = :userId
-              AND t.revoked_at IS NULL
-              AND t.expires_at > :now
-              AND t.session_expires_at > :now
-              AND t.last_activity_at > :idleDeadline
-              AND u.id = t.user_id
-              AND u.is_active = TRUE
-              AND u.deleted_at IS NULL
-            """, nativeQuery = true)
-    int touchActiveSession(
-            @Param("sessionId") UUID sessionId,
-            @Param("userId") UUID userId,
-            @Param("now") Instant now,
-            @Param("idleDeadline") Instant idleDeadline);
 
     @Modifying
     @Query("""
             UPDATE RefreshTokenEntity t
             SET t.revokedAt = :revokedAt
-            WHERE t.sessionId = :sessionId
-              AND t.userId = :userId
+            WHERE t.session.id = :sessionId
+              AND t.session.userId = :userId
               AND t.revokedAt IS NULL
             """)
     int revokeActiveTokensForSession(
@@ -94,7 +53,7 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshTokenEntity
     @Query("""
             UPDATE RefreshTokenEntity t
             SET t.revokedAt = :revokedAt
-            WHERE t.userId = :userId AND t.revokedAt IS NULL
+            WHERE t.session.userId = :userId AND t.revokedAt IS NULL
             """)
     int revokeActiveTokensForUser(
             @Param("userId") UUID userId,

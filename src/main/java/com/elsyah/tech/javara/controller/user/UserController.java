@@ -30,6 +30,7 @@ import com.elsyah.tech.javara.entity.user.UserEntity;
 import com.elsyah.tech.javara.projection.user.UserSelectColumn;
 import com.elsyah.tech.javara.service.common.ServiceResult;
 import com.elsyah.tech.javara.response.user.UserResponseWithSelectColumn;
+import com.elsyah.tech.javara.service.user.UserRoleService;
 
 /**
  * UserController is a REST controller that handles HTTP requests related to user operations.
@@ -50,9 +51,11 @@ import com.elsyah.tech.javara.response.user.UserResponseWithSelectColumn;
         matchIfMissing = true)
 public class UserController {
     private final UserService service;
+    private final UserRoleService userRoleService;
 
-    public UserController(UserService service) {
+    public UserController(UserService service, UserRoleService userRoleService) {
         this.service = service;
+        this.userRoleService = userRoleService;
     }
 
     /**
@@ -72,7 +75,7 @@ public class UserController {
      * 
      */
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('users:manage')")
     public ResponseEntity<ApiResponse<UserResponse>> createUser(@Valid @RequestBody UserRequest request) {
         ServiceResult<UserEntity> result = service.createUser(request);
         HttpStatus status = result.status();
@@ -85,7 +88,9 @@ public class UserController {
         ApiResponse<UserResponse> response = ApiResponse.success(
                 status,
                 result.message(),
-                UserResponse.from(result.data()));
+                UserResponse.from(
+                        result.data(),
+                        userRoleService.rolesForUser(result.data().getId())));
         return ResponseEntity.status(status).body(response);
     }
 
@@ -104,7 +109,7 @@ public class UserController {
      * 
      */
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('users:read')")
     public ResponseEntity<ApiResponse<List<UserResponseWithSelectColumn>>> findAllUsers(
             @RequestParam(name = "page", defaultValue = "0") int page,
             @RequestParam(name = "size", defaultValue = "20") int size) {
@@ -159,7 +164,7 @@ public class UserController {
      * 
      */
     @GetMapping("/{id:[0-9a-fA-F-]+}")
-    @PreAuthorize("hasRole('ADMIN') or #p0.toString() == authentication.name")
+    @PreAuthorize("hasAuthority('users:read') or #p0.toString() == authentication.name")
     public ResponseEntity<ApiResponse<UserResponse>> findUserById(@PathVariable UUID id) {
         ServiceResult<UserEntity> result = service.findUserById(id);
         HttpStatus status = result.status();
@@ -172,7 +177,9 @@ public class UserController {
         ApiResponse<UserResponse> response = ApiResponse.success(
                 status,
                 result.message(),
-                UserResponse.from(result.data()));
+                UserResponse.from(
+                        result.data(),
+                        userRoleService.rolesForUser(result.data().getId())));
         return ResponseEntity.status(status).body(response);
     }
 
@@ -190,7 +197,7 @@ public class UserController {
      * 
      */
     @GetMapping("/findUserByIdWithSelectedColumns/{id:[0-9a-fA-F-]+}")
-    @PreAuthorize("hasRole('ADMIN') or #p0.toString() == authentication.name")
+    @PreAuthorize("hasAuthority('users:manage') or #p0.toString() == authentication.name")
     public ResponseEntity<ApiResponse<UserResponseWithSelectColumn>> findUserByIdWithSelectedColumns(
             @PathVariable UUID id) {
         ServiceResult<UserSelectColumn> result = service.findUserByIdWithSelectedColumns(id);
@@ -225,7 +232,7 @@ public class UserController {
      * 
      */
     @PutMapping("/{id:[0-9a-fA-F-]+}")
-    @PreAuthorize("hasRole('ADMIN') or #p0.toString() == authentication.name")
+    @PreAuthorize("hasAuthority('users:manage') or #p0.toString() == authentication.name")
     public ResponseEntity<ApiResponse<UserResponse>> updateUser(
             @PathVariable UUID id,
             @Valid @RequestBody UserUpdateRequest request
@@ -241,7 +248,9 @@ public class UserController {
         ApiResponse<UserResponse> response = ApiResponse.success(
                 status,
                 result.message(),
-                UserResponse.from(result.data()));
+                UserResponse.from(
+                        result.data(),
+                        userRoleService.rolesForUser(result.data().getId())));
         return ResponseEntity.status(status).body(response);
     }
 
@@ -259,7 +268,7 @@ public class UserController {
      * 
      */
     @DeleteMapping("/{id:[0-9a-fA-F-]+}")
-    @PreAuthorize("hasRole('ADMIN') or #p0.toString() == authentication.name")
+    @PreAuthorize("hasAuthority('users:manage') or #p0.toString() == authentication.name")
     public ResponseEntity<ApiResponse<UserResponse>> deleteUser(@PathVariable UUID id) {
         ServiceResult<UserEntity> result = service.deleteUser(id);
         HttpStatus status = result.status();
@@ -272,7 +281,9 @@ public class UserController {
         ApiResponse<UserResponse> response = ApiResponse.success(
                 status,
                 result.message(),
-                UserResponse.from(result.data()));
+                UserResponse.from(
+                        result.data(),
+                        userRoleService.rolesForUser(result.data().getId())));
         return ResponseEntity.status(status).body(response);
     }
 

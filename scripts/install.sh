@@ -11,6 +11,52 @@ confirm() {
     [[ "$answer" == "y" || "$answer" == "Y" ]]
 }
 
+run_as_admin() {
+    if (( EUID == 0 )); then
+        "$@"
+    elif command -v sudo >/dev/null 2>&1; then
+        sudo "$@"
+    else
+        printf '%s\n' "Administrator privileges are required; run as root or install sudo." >&2
+        return 1
+    fi
+}
+
+docker_daemon_ready() {
+    if docker info >/dev/null 2>&1; then
+        return 0
+    fi
+    if [[ "$(uname -s)" == "Linux" ]] && (( EUID != 0 )) \
+            && command -v sudo >/dev/null 2>&1; then
+        sudo docker info >/dev/null 2>&1
+        return
+    fi
+    return 1
+}
+
+start_docker_service() {
+    [[ "$(uname -s)" == "Linux" ]] || return 0
+    docker_daemon_ready && return 0
+
+    if ! command -v systemctl >/dev/null 2>&1 \
+            || ! systemctl show-environment >/dev/null 2>&1; then
+        printf '%s\n' "Docker is not running and systemd is unavailable." >&2
+        printf '%s\n' "Start Docker manually, then rerun 'make install'." >&2
+        return 1
+    fi
+
+    if systemctl is-active --quiet docker; then
+        return 0
+    fi
+    if ! run_as_admin systemctl enable --now docker; then
+        if docker_daemon_ready; then
+            return 0
+        fi
+        printf '%s\n' "Docker could not be started by systemd. Start Docker manually, then rerun 'make install'." >&2
+        return 1
+    fi
+}
+
 yaml_quote() {
     printf "'%s'" "$(printf '%s' "$1" | sed "s/'/''/g")"
 }
@@ -25,6 +71,19 @@ validate_time_zone() {
 }
 
 configure_auth_bootstrap() {
+    read -r -p "Organization mode (single/shared) [single]: " tenancy_mode
+    tenancy_mode="${tenancy_mode:-single}"
+    case "$(printf '%s' "$tenancy_mode" | tr '[:upper:]' '[:lower:]')" in
+        single|satu|single-organization) tenancy_mode=SINGLE ;;
+        shared|multi|multi-tenant) tenancy_mode=SHARED ;;
+        *)
+            printf '%s\n' "Organization mode must be single or shared." >&2
+            exit 1
+            ;;
+    esac
+    if [[ "$tenancy_mode" == "SHARED" ]]; then
+        printf '%s\n' "Shared multi-tenant runtime is not ready yet; the generated configuration will fail fast at startup." >&2
+    fi
     read -r -p "Initial administrator email: " bootstrap_admin_email
     read -r -s -p "Initial administrator password: " bootstrap_admin_password
     printf '\n' >&2
@@ -147,25 +206,20 @@ install_prerequisites() {
 
     case "$distro_id $distro_like" in
         *debian*|*ubuntu*)
-            sudo apt-get update
-            sudo apt-get install -y docker.io docker-compose-v2 openjdk-25-jdk
-            sudo systemctl enable --now docker
+            run_as_admin apt-get update
+            run_as_admin apt-get install -y docker.io docker-compose-v2 openjdk-25-jdk
             ;;
         *fedora*)
-            sudo dnf install -y docker docker-compose-plugin java-25-openjdk-devel
-            sudo systemctl enable --now docker
+            run_as_admin dnf install -y docker docker-compose-plugin java-25-openjdk-devel
             ;;
         *rhel*|*centos*|*rocky*|*almalinux*)
-            sudo dnf install -y docker docker-compose-plugin java-25-openjdk-devel
-            sudo systemctl enable --now docker
+            run_as_admin dnf install -y docker docker-compose-plugin java-25-openjdk-devel
             ;;
         *arch*)
-            sudo pacman -Sy --needed --noconfirm docker docker-compose jdk-openjdk
-            sudo systemctl enable --now docker
+            run_as_admin pacman -Sy --needed --noconfirm docker docker-compose jdk-openjdk
             ;;
         *opensuse*|*suse*)
-            sudo zypper --non-interactive install docker docker-compose java-25-openjdk-devel
-            sudo systemctl enable --now docker
+            run_as_admin zypper --non-interactive install docker docker-compose java-25-openjdk-devel
             ;;
         *)
             printf 'Automatic installation is not configured for Linux distribution "%s".\n' \
@@ -222,9 +276,8 @@ if [[ "$(uname -s)" == "Darwin" ]] && ! docker info >/dev/null 2>&1; then
     printf '%s\n' "Waiting for Docker Desktop. Complete any first-run prompts if shown."
 fi
 
-if [[ "$(uname -s)" == "Linux" ]] && command -v systemctl >/dev/null 2>&1 \
-        && ! systemctl is-active --quiet docker; then
-    sudo systemctl enable --now docker
+if [[ "$(uname -s)" == "Linux" ]]; then
+    start_docker_service
 fi
 
 ready=false
@@ -234,7 +287,7 @@ for _ in $(seq 1 60); do
             ready=true
             break
         fi
-    elif docker info >/dev/null 2>&1 || sudo docker info >/dev/null 2>&1; then
+    elif docker_daemon_ready; then
         ready=true
         break
     fi
@@ -367,6 +420,8 @@ spring:
     open-in-view: false
 app:
   name: $(yaml_quote "$application_name")
+  tenancy:
+    mode: ${tenancy_mode}
   branding:
     powered-by: $(yaml_quote "$powered_by")
   time-zone: $(yaml_quote "$application_timezone")

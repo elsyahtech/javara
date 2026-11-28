@@ -22,11 +22,10 @@ import org.springframework.transaction.annotation.Transactional;
 import com.elsyah.tech.javara.entity.auth.AdminPasswordResetAuditEntity;
 import com.elsyah.tech.javara.entity.auth.PasswordResetTokenEntity;
 import com.elsyah.tech.javara.entity.user.UserEntity;
-import com.elsyah.tech.javara.entity.user.UserRole;
 import com.elsyah.tech.javara.repository.auth.AdminPasswordResetAuditRepository;
 import com.elsyah.tech.javara.repository.auth.PasswordResetTokenRepository;
-import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
 import com.elsyah.tech.javara.repository.user.UserRepository;
+import com.elsyah.tech.javara.service.auth.SessionRevocationService;
 import com.elsyah.tech.javara.service.common.ServiceResult;
 import com.elsyah.tech.javara.service.email.EmailNotificationService;
 import com.elsyah.tech.javara.service.user.PasswordPolicyService;
@@ -46,7 +45,7 @@ public class PasswordResetService {
     private final UserRepository userRepository;
     private final PasswordResetTokenRepository tokenRepository;
     private final AdminPasswordResetAuditRepository auditRepository;
-    private final RefreshTokenRepository refreshTokenRepository;
+    private final SessionRevocationService sessionRevocationService;
     private final PasswordHashService passwordHashService;
     private final PasswordPolicyService passwordPolicyService;
     private final EmailNotificationService emailNotificationService;
@@ -57,7 +56,7 @@ public class PasswordResetService {
             UserRepository userRepository,
             PasswordResetTokenRepository tokenRepository,
             AdminPasswordResetAuditRepository auditRepository,
-            RefreshTokenRepository refreshTokenRepository,
+            SessionRevocationService sessionRevocationService,
             PasswordHashService passwordHashService,
             PasswordPolicyService passwordPolicyService,
             EmailNotificationService emailNotificationService,
@@ -66,7 +65,7 @@ public class PasswordResetService {
         this.userRepository = userRepository;
         this.tokenRepository = tokenRepository;
         this.auditRepository = auditRepository;
-        this.refreshTokenRepository = refreshTokenRepository;
+        this.sessionRevocationService = sessionRevocationService;
         this.passwordHashService = passwordHashService;
         this.passwordPolicyService = passwordPolicyService;
         this.emailNotificationService = emailNotificationService;
@@ -119,7 +118,7 @@ public class PasswordResetService {
         target.setPasswordResetSupportRequired(true);
         target.setUpdatedAt(now);
         userRepository.saveAndFlush(target);
-        refreshTokenRepository.revokeActiveTokensForUser(targetUserId, now);
+        sessionRevocationService.revokeAllForUser(targetUserId, now);
         tokenRepository.deleteByUserId(targetUserId);
         audit(
                 actorUserId,
@@ -244,7 +243,7 @@ public class PasswordResetService {
         user.setPasswordResetSupportRequired(false);
         user.setUpdatedAt(now);
         userRepository.saveAndFlush(user);
-        refreshTokenRepository.revokeActiveTokensForUser(userId, now);
+        sessionRevocationService.revokeAllForUser(userId, now);
         token.setConsumedAt(now);
         tokenRepository.save(token);
         audit(userId, userId, "RECOVERY_COMPLETED", null, now);
@@ -279,7 +278,7 @@ public class PasswordResetService {
             }
         }
         if (!Boolean.TRUE.equals(actor.getIsActive())
-                || actor.getRole() != UserRole.ADMIN
+                || !userRepository.hasPermission(actor.getId(), "password-resets:manage")
                 || !passwordHashService.matches(currentPassword, actor.getPassword())) {
             return new ServiceResult<>(
                     null, HttpStatus.UNAUTHORIZED, "Authentication is required");

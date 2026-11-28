@@ -11,7 +11,7 @@ penetration test, certification, or production-readiness claim.
 - Initial assessment documentation checkout: `0a1c7108a4b5ba74cbb2c99eb36d943464b75381`;
   changes from the source baseline at that point were assessment
   documentation only.
-- Current review date: 2026-11-27. Remediation evidence below reflects commit
+- Current review date: 2026-11-28. Remediation evidence below reflects commit
   `b009b8a` and local manual tests, not an independent reassessment.
 - Initial baseline: 21 requirements marked `Fail`. Current disposition: 4
   `Fail`, 17 `Pending` retest/evidence, and 324 `Not assessed`.
@@ -44,6 +44,11 @@ For the current AUTH-06 worktree, `make test` passed 225 tests with 0 failures,
 0 errors, and 0 skipped. The focused AUTH-06/authentication/email selection
 passed another 24 tests after two additional login-lock tests were added. These
 are automated results; a partial local manual AUTH-06 retest is recorded below.
+
+On 2026-11-28, after the fresh-install ERD and session-storage changes,
+`make test` passed 242 tests with 0 failures, 0 errors, and 0 skipped. This
+regression result does not change the ASVS dispositions above; no requirement
+is thereby marked `Pass`.
 
 ### AUTH-06 local retest checklist
 
@@ -260,6 +265,125 @@ observed:
   returned `401`, while login with the newly set password succeeded. Passwords,
   tokens, account identifiers, and recipient addresses are omitted.
 
+### Fresh-install local retest (2026-11-28, `SINGLE` tenancy)
+
+After creating a fresh PostgreSQL database and starting JAVARA with tenancy
+mode `SINGLE` and the configured authentication modules enabled, the user
+observed:
+
+- Bootstrap ADMIN login succeeded and a new-session notification email was
+  received.
+- Public registration returned the generic `202` response and delivered a
+  verification email. Login before verification returned `401` with the
+  generic `"Invalid email or password"` response.
+- Opening the verification link displayed the confirmation page; submitting
+  the confirmation returned `200`. Login after verification returned `200`
+  with the `USER` role.
+- `GET /api/v1/auth/sessions` returned `200` for both ADMIN and USER sessions,
+  each identifying its current session.
+- After more than 15 minutes without activity, the USER's session-list request
+  and refresh request both returned `401`. The session-list result is also
+  expected because the access token itself expires after 15 minutes; the
+  refresh rejection confirms that the idle-session policy prevented renewal.
+  The configured refresh-token TTL is an upper bound and does not extend a
+  session past its idle or absolute expiry.
+- `GET /api/v1/users` returned `200` for the ADMIN session and `403` for the
+  USER session, matching the endpoint's `users:read` authorization.
+- ADMIN logout returned `200`; a subsequent protected user-list request using
+  the logged-out access token returned `401`, confirming access was rejected
+  after logout.
+
+Verification links, tokens, session identifiers, account identifiers, email
+addresses, and credentials are omitted. These results cover the reported
+single-tenant local flows only; they do not assess shared multi-tenant mode or
+complete the requirement-specific ASVS review. Existing ASVS dispositions
+remain unchanged.
+
+### Idle-timeout-disabled local retest (2026-11-28, `SINGLE` tenancy)
+
+The user reported configuring `idle-timeout-enabled: false`,
+`idle-timeout: 15m`, `absolute-lifetime: 12h`, and
+`max-concurrent-sessions: 5` with `make security-setup`. The user then reported
+that `make test` passed and `make run` started successfully. After a fresh USER
+login and more than 15 minutes without requests:
+
+- `GET /api/v1/auth/sessions` with the original access token returned `401`
+  (`Authentication is required`). This is expected because the access token
+  itself expires after 15 minutes; it does not by itself show that the
+  server-side session expired.
+- Refresh with the current refresh token succeeded and returned new tokens.
+  Using the new access token, the same session-list request returned `200` and
+  showed the current session with recent activity.
+
+This user-reported local result supports the intended behavior: disabling idle
+expiry allows a session to continue past the idle interval when refreshed,
+while the separate access-token lifetime still applies. The test did not reach
+the 12-hour maximum session duration or the refresh-token TTL, so it does not verify
+those expiry boundaries. No tokens, session identifiers, account identifiers,
+email addresses, or credentials are recorded. This remains local smoke-test
+evidence; ASVS dispositions are unchanged.
+
+### Refresh rotation and logout local retest (2026-11-28, `SINGLE` tenancy)
+
+The user reported that refreshing a USER session returned a different access
+token and refresh token. Logout with the original login refresh token and then
+logout with the newly issued refresh token each returned `200`. Afterwards,
+protected session-list requests using either access token returned `401`.
+The observed final state is consistent: refresh creates new tokens for the
+same session, and logout with the current token revokes that session, making
+both access tokens unusable. The first logout used an already-rotated token;
+the manual sequence does not independently establish whether that call alone
+ended the session.
+
+The implementation now also revokes the associated session when logout is
+called with a stored, already-rotated refresh token. A focused integration test
+verifies that both the pre-refresh and post-refresh access tokens then receive
+`401`. The user-provided token values are intentionally omitted and must not
+be reused. This local observation does not change any ASVS disposition.
+
+Refresh-token rotation is now enabled by default and can be disabled through
+`make security-setup`. With rotation disabled, refresh keeps the same token;
+the token's expiry remains fixed from login and replay detection is unavailable.
+The deployment default remains the security-oriented behavior, but the setting
+is configurable to fit different client and risk requirements. This
+configuration choice does not by itself establish ASVS compliance or change
+any assessment disposition.
+
+### Refresh rotation enabled local retest (2026-11-28)
+
+In a subsequent local test, the user expected refresh-token rotation to be
+disabled, but the recorded wizard input selected `true`, and the saved
+`config/security.yml` also contained `refresh-token-rotation-enabled: true`.
+The refresh response returned a different refresh token, which is the expected
+behavior with rotation enabled; this does not indicate an implementation
+failure. The report verifies the enabled path only, not the disabled path.
+The user-provided token values are intentionally omitted and must not be
+reused. No ASVS disposition is changed by this observation.
+
+### Email MFA enrollment and login local retest (2026-11-28)
+
+The user reported that an email MFA enrollment challenge (`ENROLL`) returned
+the generic `401` after one incorrect code, then succeeded when the valid code
+was submitted to the enrollment verification endpoint. The old access token
+then received `401`, consistent with successful MFA enrollment revoking
+existing sessions. A subsequent password login without an explicit
+`mfaMethod` returned a `202` challenge (`VERIFY`) using the preferred
+`EMAIL_OTP` factor; this is an intermediate MFA step, not a completed login.
+One incorrect OTP returned `401`, and the valid code for that same still-valid
+challenge then completed login and issued tokens. A protected session-list
+request using the resulting access token returned `200`.
+
+The saved local configuration has idle timeout disabled, maximum session
+duration enabled at 12 hours, refresh-token rotation enabled, and five
+concurrent sessions. The reported session expiry was 12 hours after its
+start, consistent with the fixed maximum duration; disabling idle expiry does
+not remove that limit. The configured failed-MFA policy is five attempts
+within 10 minutes with `LOCK_AND_NOTIFY`; one wrong code is below that
+threshold. These observations are consistent with the configured flow, but
+are local smoke-test evidence only. They do not establish ASVS Level 3
+compliance or change any assessment disposition. Challenge IDs, codes, tokens,
+and account identifiers are intentionally omitted.
+
 These are local smoke-test observations, not requirement-by-requirement ASVS
 verification. Tokens, passwords, and recipient addresses are deliberately
 excluded. No production or staging environment was assessed.
@@ -285,7 +409,7 @@ Evidence references for the committed remediation include:
 - Emergency password reset and recovery: [`AdminPasswordResetController`](../../../src/main/java/com/elsyah/tech/javara/controller/user/AdminPasswordResetController.java),
   [`PasswordResetService`](../../../src/main/java/com/elsyah/tech/javara/service/auth/PasswordResetService.java),
   [`EmailVerificationIntegrationTests`](../../../src/test/java/com/elsyah/tech/javara/integration/EmailVerificationIntegrationTests.java),
-  and migration [`V8__track_compromised_password_hashes.sql`](../../../src/main/resources/db/migration/V8__track_compromised_password_hashes.sql).
+  and migration [`V6__track_compromised_password_hashes.sql`](../../../src/main/resources/db/migration/V6__track_compromised_password_hashes.sql).
 
 The review also inspected the password request/hash path, authentication and
 user controllers, token lifecycle, JWT validation, and the production/API
@@ -393,7 +517,7 @@ Only `Pass` can indicate a verified requirement; none is claimed here.
 
 | Finding | Requirement | Baseline evidence and gap | Current disposition |
 |---|---|---|---|
-| SES-01 | V7.1.1 | The baseline did not document inactivity and absolute session lifetimes or the associated risk rationale. | `Pending` — local refresh was rejected after more than 15 minutes of inactivity, and an automated test covers expiry beyond the 12-hour absolute lifetime. Risk rationale and complete requirement-specific timeout/re-authentication assessment remain outstanding. |
+| SES-01 | V7.1.1 | The baseline did not document inactivity and maximum session duration or the associated risk rationale. | `Pending` — local checks confirmed refresh rejection after more than 15 minutes when idle expiry was enabled, and successful refresh beyond 15 minutes when it was disabled; the protected request still returned `401` because the access token had expired. Automated tests cover the secure 12-hour maximum session duration and the fixed-from-login refresh-token TTL fallback when the `absolute-lifetime-enabled` setting is disabled. Local manual verification of the maximum-session-duration setting remains outstanding, as do risk rationale and the complete requirement-specific timeout/re-authentication assessment. |
 | SES-02 | V7.1.2 | The baseline did not document or enforce a concurrent-session limit. | `Pending` — local testing confirmed the configured cap rejects an additional login with `409` and allows another login after a slot is freed. Requirement-specific edge cases and risk rationale remain outstanding. |
 | SES-03 | V7.3.2 | The baseline refresh flow could extend sessions without preserving an absolute start time. | `Pending` — `AuthServiceTests.repeatedRefreshesPreserveAbsoluteExpiryAndRejectAtBoundary` verifies six refresh rotations near the end of a 12-hour session preserve the same absolute expiry, then rejects and revokes the session at the exact expiry boundary. Requirement-specific review remains. |
 | SES-04 | V7.4.1 | The baseline revoked refresh tokens but left already-issued access JWTs usable until expiry. | `Pending` — local two-session logout, targeted termination, and all-session termination confirmed revoked access tokens receive `401`. Other revocation causes and the full requirement still need verification. |

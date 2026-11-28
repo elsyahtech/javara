@@ -32,8 +32,8 @@ import com.elsyah.tech.javara.middleware.config.ApplicationBrandingProperties;
 import com.elsyah.tech.javara.middleware.config.ApplicationIdentityProperties;
 import com.elsyah.tech.javara.middleware.email.EmailSettings;
 import com.elsyah.tech.javara.repository.auth.EmailVerificationTokenRepository;
-import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
 import com.elsyah.tech.javara.repository.user.UserRepository;
+import com.elsyah.tech.javara.service.auth.SessionRevocationService;
 import com.elsyah.tech.javara.service.email.EmailNotificationService;
 import com.elsyah.tech.javara.service.email.EmailVerificationService;
 
@@ -114,7 +114,7 @@ class EmailVerificationServiceTests {
         return new EmailVerificationService(
                 tokenRepository,
                 userRepository,
-                mock(RefreshTokenRepository.class),
+                mock(SessionRevocationService.class),
                 notifications,
                 settings(),
                 Clock.fixed(NOW, ZoneOffset.UTC));

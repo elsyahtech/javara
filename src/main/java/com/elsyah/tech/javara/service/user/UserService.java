@@ -17,8 +17,8 @@ import org.springframework.http.HttpStatus;
 
 import com.elsyah.tech.javara.entity.user.UserEntity;
 import com.elsyah.tech.javara.projection.user.UserSelectColumn;
-import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
 import com.elsyah.tech.javara.repository.user.UserRepository;
+import com.elsyah.tech.javara.service.auth.SessionRevocationService;
 import com.elsyah.tech.javara.service.auth.SuspiciousAuthenticationService;
 import com.elsyah.tech.javara.service.email.EmailNotificationService;
 import com.elsyah.tech.javara.service.email.EmailVerificationService;
@@ -52,9 +52,10 @@ public class UserService {
      * The UserRepository is used for database operations related to users.
      */
     private final UserRepository repository;
-    private final RefreshTokenRepository refreshTokenRepository;
+    private final SessionRevocationService sessionRevocationService;
     private final PasswordHashService passwordHashService;
     private final PasswordPolicyService passwordPolicyService;
+    private final UserRoleService userRoleService;
     private final EmailNotificationService emailNotificationService;
     private final EmailVerificationService emailVerificationService;
     private final SuspiciousAuthenticationService suspiciousAuthenticationService;
@@ -68,16 +69,18 @@ public class UserService {
     public UserService(
             UserRepository repository,
             PasswordHashService passwordHashService,
-            RefreshTokenRepository refreshTokenRepository,
+            SessionRevocationService sessionRevocationService,
             PasswordPolicyService passwordPolicyService,
+            UserRoleService userRoleService,
             EmailNotificationService emailNotificationService,
             EmailVerificationService emailVerificationService,
             SuspiciousAuthenticationService suspiciousAuthenticationService,
             Clock clock) {
         this.repository = repository;
         this.passwordHashService = passwordHashService;
-        this.refreshTokenRepository = refreshTokenRepository;
+        this.sessionRevocationService = sessionRevocationService;
         this.passwordPolicyService = passwordPolicyService;
+        this.userRoleService = userRoleService;
         this.emailNotificationService = emailNotificationService;
         this.emailVerificationService = emailVerificationService;
         this.suspiciousAuthenticationService = suspiciousAuthenticationService;
@@ -136,6 +139,7 @@ public class UserService {
         userEntity.setEmailVerified(emailVerified);
 
         UserEntity createdUser = repository.saveAndFlush(userEntity);
+        userRoleService.assignInitialRoles(createdUser.getId(), List.of("USER"));
         return new ServiceResult<>(
                 createdUser,
                 HttpStatus.CREATED,
@@ -231,6 +235,9 @@ public class UserService {
                     HttpStatus.BAD_REQUEST,
                     "Use the dedicated password-change endpoint");
         }
+        if (request.isActive() != null) {
+            repository.lockDefaultTenantForUpdate();
+        }
         Optional<UserEntity> optionalUser = repository.findByIdForUpdate(id);
         if (optionalUser.isPresent()) {
             UserEntity userEntity = optionalUser.get();
@@ -247,6 +254,17 @@ public class UserService {
 
             boolean accountDisabled = Boolean.TRUE.equals(userEntity.getIsActive())
                     && Boolean.FALSE.equals(request.isActive());
+            boolean accountStatusChanged = request.isActive() != null
+                    && !request.isActive().equals(userEntity.getIsActive());
+            if (accountDisabled) {
+                if (repository.hasPermission(id, "roles:manage")
+                        && repository.countActiveRoleManagers() <= 1) {
+                    return new ServiceResult<>(
+                            null,
+                            HttpStatus.CONFLICT,
+                            "The final role manager cannot be disabled");
+                }
+            }
             if (request.isActive() != null) {
                 userEntity.setIsActive(request.isActive());
             }
@@ -254,8 +272,11 @@ public class UserService {
             userEntity.setUpdatedAt(now);
 
             UserEntity updatedUser = repository.saveAndFlush(userEntity);
+            if (accountStatusChanged) {
+                userRoleService.recordAuthorizationChange(id);
+            }
             if (accountDisabled) {
-                refreshTokenRepository.revokeActiveTokensForUser(id, now);
+                sessionRevocationService.revokeAllForUser(id, now);
             }
             return new ServiceResult<>(updatedUser, HttpStatus.OK, "User updated successfully");
         }
@@ -277,7 +298,7 @@ public class UserService {
                 || !passwordHashService.matches(
                         currentPassword, actingUser.get().getPassword())
                 || (administratorRequest
-                        ? actingUser.get().getRole() != com.elsyah.tech.javara.entity.user.UserRole.ADMIN
+                        ? !repository.hasPermission(actingUserId, "users:manage")
                         : !actingUserId.equals(targetUserId))) {
             return new ServiceResult<>(
                     null, HttpStatus.UNAUTHORIZED, "Re-authentication failed");
@@ -353,7 +374,7 @@ public class UserService {
         user.setPassword(passwordHashService.encode(newPassword));
         user.setUpdatedAt(now);
         repository.saveAndFlush(user);
-        refreshTokenRepository.revokeActiveTokensForUser(userId, now);
+        sessionRevocationService.revokeAllForUser(userId, now);
         emailNotificationService.passwordChanged(user.getEmail());
         suspiciousAuthenticationService.securityChange(user, "password was changed");
         return new ServiceResult<>(null, HttpStatus.OK, "Password changed successfully");
@@ -373,14 +394,23 @@ public class UserService {
      */
     @Transactional
     public ServiceResult<UserEntity> deleteUser(UUID id) {
+        repository.lockDefaultTenantForUpdate();
         Optional<UserEntity> optionalUser = repository.findByIdForUpdate(id);
         if (optionalUser.isPresent()) {
             UserEntity deletedUser = optionalUser.get();
+            if (repository.hasPermission(id, "roles:manage")
+                    && repository.countActiveRoleManagers() <= 1) {
+                return new ServiceResult<>(
+                        null,
+                        HttpStatus.CONFLICT,
+                        "The final role manager cannot be deleted");
+            }
             Instant now = clock.instant();
             deletedUser.setDeletedAt(now);
             
             repository.saveAndFlush(deletedUser);
-            refreshTokenRepository.revokeActiveTokensForUser(id, now);
+            userRoleService.recordAuthorizationChange(id);
+            sessionRevocationService.revokeAllForUser(id, now);
             return new ServiceResult<>(deletedUser, HttpStatus.OK, "User deleted successfully");
         }
 

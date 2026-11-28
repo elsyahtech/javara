@@ -33,9 +33,11 @@ import com.elsyah.tech.javara.service.auth.AuthService;
 import com.elsyah.tech.javara.service.auth.AccessTokenService;
 import com.elsyah.tech.javara.testsupport.PostgresRedisTestSupport;
 import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
+import com.elsyah.tech.javara.repository.auth.UserSessionRepository;
 import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.utils.security.PasswordHashService;
 import com.elsyah.tech.javara.testsupport.SessionTokenTestSupport;
+import com.elsyah.tech.javara.service.user.UserRoleService;
 
 @SpringBootTest(properties = {
         "app.security.jwt.signing-key=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
@@ -59,6 +61,12 @@ class CookieSecurityIntegrationTests extends PostgresRedisTestSupport {
 
     @Autowired
     private RefreshTokenRepository refreshTokenRepository;
+
+    @Autowired
+    private UserSessionRepository userSessionRepository;
+
+    @Autowired
+    private UserRoleService userRoleService;
 
     @Autowired
     private PasswordHashService passwordHashService;
@@ -123,9 +131,12 @@ class CookieSecurityIntegrationTests extends PostgresRedisTestSupport {
         String token = SessionTokenTestSupport.issueAccessToken(
                 user,
                 userRepository,
+                userRoleService,
+                userSessionRepository,
                 refreshTokenRepository,
                 accessTokenService,
-                passwordHashService);
+                passwordHashService,
+                List.of("USER"));
 
         mockMvc.perform(get("/api/v1/users")
                         .cookie(new Cookie("ACCESS_TOKEN", token)))

@@ -9,7 +9,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "password_reset_tokens")
+@Table(name = "javara_password_reset_tokens")
 public class PasswordResetTokenEntity {
     @Id
     @Column(name = "id", nullable = false)

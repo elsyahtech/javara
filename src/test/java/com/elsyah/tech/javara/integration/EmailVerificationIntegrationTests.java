@@ -57,6 +57,7 @@ import com.elsyah.tech.javara.service.email.EmailEventType;
 import com.elsyah.tech.javara.service.email.EmailMessageEvent;
 import com.elsyah.tech.javara.service.email.EmailVerificationService;
 import com.elsyah.tech.javara.service.user.UserService;
+import com.elsyah.tech.javara.service.user.UserRoleService;
 import com.elsyah.tech.javara.testsupport.PostgresRedisTestSupport;
 import com.elsyah.tech.javara.utils.security.PasswordHashService;
 import com.elsyah.tech.javara.request.auth.LoginRequest;
@@ -118,6 +119,9 @@ class EmailVerificationIntegrationTests extends PostgresRedisTestSupport {
 
     @Autowired
     private UserService userService;
+
+    @Autowired
+    private UserRoleService userRoleService;
 
     @Autowired
     private RecordingEmailDelivery emailDelivery;
@@ -359,8 +363,7 @@ class EmailVerificationIntegrationTests extends PostgresRedisTestSupport {
     void emergencyPasswordRandomizationLocksAccountUntilSupportAuthorizedRecovery()
             throws Exception {
         UserEntity admin = createVerifiedUser("admin-current-password-123");
-        admin.setRole(UserRole.ADMIN);
-        userRepository.saveAndFlush(admin);
+        userRoleService.replaceUserRoles(admin.getId(), null, List.of(UserRole.ADMIN.name()));
         UserEntity target = createVerifiedUser("target-current-password-123");
         var adminLogin = authService.login(
                 new LoginRequest(admin.getEmail(), "admin-current-password-123"));
@@ -588,8 +591,8 @@ class EmailVerificationIntegrationTests extends PostgresRedisTestSupport {
         user.setPassword(passwordHashService.encode(password));
         user.setIsActive(true);
         user.setEmailVerified(true);
-        user.setRole(UserRole.USER);
         userRepository.saveAndFlush(user);
+        userRoleService.assignInitialRoles(user.getId(), List.of(UserRole.USER.name()));
         createdUserIds.add(user.getId());
         return user;
     }

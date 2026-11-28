@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
 import java.util.UUID;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
@@ -27,10 +28,11 @@ class UserResponseTest {
         user.setIsActive(true);
         user.setUpdatedAt(updatedAt);
 
-        UserResponse response = UserResponse.from(user);
+        UserResponse response = UserResponse.from(user, List.of("USER", "REPORT_VIEWER"));
 
         assertThat(response.id()).isEqualTo(user.getId());
         assertThat(response.email()).isEqualTo("user@example.com");
+        assertThat(response.roles()).containsExactly("USER", "REPORT_VIEWER");
         assertThat(response.isActive()).isTrue();
         assertThat(response.updatedAt()).isEqualTo(updatedAt);
         assertThat(response.deletedAt()).isNull();

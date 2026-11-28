@@ -41,7 +41,7 @@ public class AdminSessionController {
     }
 
     @PostMapping("/{userId}/sessions/terminate")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('sessions:manage')")
     public ResponseEntity<ApiResponse<Integer>> terminateUserSessions(
             @AuthenticationPrincipal Jwt principal,
             @PathVariable UUID userId,
@@ -59,7 +59,7 @@ public class AdminSessionController {
     }
 
     @PostMapping("/{userId}/email/change")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('sessions:manage')")
     public ResponseEntity<ApiResponse<Void>> requestUserEmailChange(
             @AuthenticationPrincipal Jwt principal,
             @PathVariable UUID userId,

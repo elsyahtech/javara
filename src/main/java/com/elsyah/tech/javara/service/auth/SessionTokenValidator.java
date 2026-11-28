@@ -11,7 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 import com.elsyah.tech.javara.middleware.security.SessionProperties;
-import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
+import com.elsyah.tech.javara.repository.auth.UserSessionRepository;
 
 @Service
 @ConditionalOnProperty(
@@ -20,15 +20,15 @@ import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
         havingValue = "true",
         matchIfMissing = true)
 public class SessionTokenValidator {
-    private final RefreshTokenRepository refreshTokenRepository;
+    private final UserSessionRepository userSessionRepository;
     private final SessionProperties sessionProperties;
     private final Clock clock;
 
     public SessionTokenValidator(
-            RefreshTokenRepository refreshTokenRepository,
+            UserSessionRepository userSessionRepository,
             SessionProperties sessionProperties,
             Clock clock) {
-        this.refreshTokenRepository = refreshTokenRepository;
+        this.userSessionRepository = userSessionRepository;
         this.sessionProperties = sessionProperties;
         this.clock = clock;
     }
@@ -44,10 +44,11 @@ public class SessionTokenValidator {
             UUID sessionId = UUID.fromString(rawSessionId);
             UUID userId = UUID.fromString(subject);
             Instant now = clock.instant();
-            return refreshTokenRepository.touchActiveSession(
+            return userSessionRepository.touchActiveSession(
                             sessionId,
                             userId,
                             now,
+                            sessionProperties.idleTimeoutEnabled(),
                             now.minus(sessionProperties.idleTimeout()))
                     > 0;
         } catch (IllegalArgumentException exception) {

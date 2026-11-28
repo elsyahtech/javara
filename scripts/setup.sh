@@ -91,6 +91,18 @@ yaml_quote() {
 auth_api_enabled="$(read_yes_no 'Enable built-in user authentication API?' 'Y')"
 resource_server_enabled="$(read_yes_no 'Enable JWT resource-server token validation?' 'Y')"
 service_auth_enabled="$(read_yes_no 'Enable service-to-service authentication?' 'Y')"
+tenancy_mode_input="$(read_value 'Organization mode (single/shared)' 'single')"
+case "$(printf '%s' "$tenancy_mode_input" | tr '[:upper:]' '[:lower:]')" in
+    single|satu|single-organization) tenancy_mode=SINGLE ;;
+    shared|multi|multi-tenant) tenancy_mode=SHARED ;;
+    *)
+        printf '%s\n' "Organization mode must be single or shared." >&2
+        exit 1
+        ;;
+esac
+if [[ "$tenancy_mode" == "SHARED" ]]; then
+    printf '%s\n' "Shared multi-tenant runtime is not ready yet; the generated configuration will fail fast at startup." >&2
+fi
 rate_limiting_enabled=false
 if [[ "$auth_api_enabled" == "true" ]]; then
     rate_limiting_enabled="$(read_yes_no 'Enable authentication rate limiting (requires Redis)?' 'Y')"
@@ -360,6 +372,8 @@ $(printf '%s\n' "$redis_config")
     open-in-view: false
 app:
   name: $(yaml_quote "$application_name")
+  tenancy:
+    mode: ${tenancy_mode}
   branding:
     powered-by: $(yaml_quote "$powered_by")
   time-zone: $(yaml_quote "$application_timezone")

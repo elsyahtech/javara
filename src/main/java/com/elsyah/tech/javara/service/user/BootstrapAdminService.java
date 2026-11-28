@@ -7,7 +7,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.elsyah.tech.javara.entity.user.UserEntity;
-import com.elsyah.tech.javara.entity.user.UserRole;
 import com.elsyah.tech.javara.middleware.config.ApplicationIdentityProperties;
 import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.utils.security.PasswordHashService;
@@ -22,16 +21,19 @@ public class BootstrapAdminService {
     private final UserRepository userRepository;
     private final PasswordHashService passwordHashService;
     private final PasswordPolicyService passwordPolicyService;
+    private final UserRoleService userRoleService;
     private final ApplicationIdentityProperties applicationIdentity;
 
     public BootstrapAdminService(
             UserRepository userRepository,
             PasswordHashService passwordHashService,
             PasswordPolicyService passwordPolicyService,
+            UserRoleService userRoleService,
             ApplicationIdentityProperties applicationIdentity) {
         this.userRepository = userRepository;
         this.passwordHashService = passwordHashService;
         this.passwordPolicyService = passwordPolicyService;
+        this.userRoleService = userRoleService;
         this.applicationIdentity = applicationIdentity;
     }
 
@@ -39,7 +41,7 @@ public class BootstrapAdminService {
     public void createInitialAdmin(String email, String password) {
         var existingUser = userRepository.findByEmail(email);
         if (existingUser.isPresent()) {
-            if (existingUser.get().getRole() != UserRole.ADMIN) {
+            if (!userRepository.hasPermission(existingUser.get().getId(), "users:manage")) {
                 throw new IllegalStateException(
                         "Bootstrap admin email already belongs to a non-admin account");
             }
@@ -57,7 +59,7 @@ public class BootstrapAdminService {
         admin.setEmail(email);
         admin.setPassword(passwordHashService.encode(password));
         admin.setIsActive(true);
-        admin.setRole(UserRole.ADMIN);
-        userRepository.saveAndFlush(admin);
+        UserEntity createdAdmin = userRepository.saveAndFlush(admin);
+        userRoleService.assignInitialRoles(createdAdmin.getId(), java.util.List.of("ADMIN"));
     }
 }

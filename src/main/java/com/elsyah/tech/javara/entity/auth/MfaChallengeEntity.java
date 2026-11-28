@@ -11,7 +11,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "mfa_challenges")
+@Table(name = "javara_mfa_challenges")
 public class MfaChallengeEntity {
     @Id
     @Column(name = "id", nullable = false)

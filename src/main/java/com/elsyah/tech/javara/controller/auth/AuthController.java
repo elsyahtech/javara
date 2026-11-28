@@ -57,6 +57,7 @@ import com.elsyah.tech.javara.service.auth.PasswordResetService;
 import com.elsyah.tech.javara.service.email.EmailVerificationService;
 import com.elsyah.tech.javara.service.common.ServiceResult;
 import com.elsyah.tech.javara.service.user.UserService;
+import com.elsyah.tech.javara.service.user.UserRoleService;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -78,6 +79,7 @@ public class AuthController {
     private final MfaService mfaService;
     private final JwtProperties jwtProperties;
     private final ApplicationIdentityProperties applicationIdentity;
+    private final UserRoleService userRoleService;
 
     public AuthController(
             UserService userService,
@@ -86,7 +88,8 @@ public class AuthController {
             PasswordResetService passwordResetService,
             MfaService mfaService,
             JwtProperties jwtProperties,
-            ApplicationIdentityProperties applicationIdentity) {
+            ApplicationIdentityProperties applicationIdentity,
+            UserRoleService userRoleService) {
         this.userService = userService;
         this.authService = authService;
         this.emailVerificationService = emailVerificationService;
@@ -94,6 +97,7 @@ public class AuthController {
         this.mfaService = mfaService;
         this.jwtProperties = jwtProperties;
         this.applicationIdentity = applicationIdentity;
+        this.userRoleService = userRoleService;
     }
 
     @PostMapping("/register")
@@ -272,7 +276,7 @@ public class AuthController {
     }
 
     @PostMapping("/email/change")
-    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    @PreAuthorize("hasAuthority('auth:self')")
     public ResponseEntity<ApiResponse<Void>> changeEmail(
             @AuthenticationPrincipal Jwt principal,
             @Valid @RequestBody EmailChangeRequest request) {
@@ -360,7 +364,7 @@ public class AuthController {
     }
 
     @GetMapping("/mfa")
-    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    @PreAuthorize("hasAuthority('auth:self')")
     public ResponseEntity<ApiResponse<MfaStatusResponse>> mfaStatus(
             @AuthenticationPrincipal Jwt principal) {
         ServiceResult<MfaStatusResponse> result =
@@ -369,7 +373,7 @@ public class AuthController {
     }
 
     @PostMapping("/mfa/email/enroll")
-    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    @PreAuthorize("hasAuthority('auth:self')")
     public ResponseEntity<ApiResponse<MfaChallengeResponse>> beginEmailMfaEnrollment(
             @AuthenticationPrincipal Jwt principal,
             @Valid @RequestBody MfaEmailEnrollmentRequest request) {
@@ -384,7 +388,7 @@ public class AuthController {
     }
 
     @PostMapping("/mfa/email/enroll/verify")
-    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    @PreAuthorize("hasAuthority('auth:self')")
     public ResponseEntity<ApiResponse<MfaStatusResponse>> verifyEmailMfaEnrollment(
             @AuthenticationPrincipal Jwt principal,
             @Valid @RequestBody MfaEmailVerificationRequest request) {
@@ -396,7 +400,7 @@ public class AuthController {
     }
 
     @PostMapping("/mfa/passkeys/enroll/options")
-    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    @PreAuthorize("hasAuthority('auth:self')")
     public ResponseEntity<ApiResponse<MfaChallengeResponse>> beginPasskeyEnrollment(
             @AuthenticationPrincipal Jwt principal,
             @Valid @RequestBody MfaPasskeyEnrollmentOptionsRequest request) {
@@ -411,7 +415,7 @@ public class AuthController {
     }
 
     @PostMapping("/mfa/passkeys/enroll")
-    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    @PreAuthorize("hasAuthority('auth:self')")
     public ResponseEntity<ApiResponse<MfaStatusResponse>> completePasskeyEnrollment(
             @AuthenticationPrincipal Jwt principal,
             @Valid @RequestBody MfaPasskeyRegistrationRequest request) {
@@ -424,7 +428,7 @@ public class AuthController {
     }
 
     @PostMapping("/mfa/preference")
-    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    @PreAuthorize("hasAuthority('auth:self')")
     public ResponseEntity<ApiResponse<MfaStatusResponse>> setMfaPreference(
             @AuthenticationPrincipal Jwt principal,
             @Valid @RequestBody MfaPreferenceRequest request) {
@@ -436,7 +440,7 @@ public class AuthController {
     }
 
     @PostMapping("/mfa/disable")
-    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    @PreAuthorize("hasAuthority('auth:self')")
     public ResponseEntity<ApiResponse<MfaStatusResponse>> disableMfaMethod(
             @AuthenticationPrincipal Jwt principal,
             @Valid @RequestBody MfaPreferenceRequest request) {
@@ -458,7 +462,8 @@ public class AuthController {
                     .body(ApiResponse.failure(result.status(), result.message()));
         }
 
-        return tokenResponse(result, result.message());
+        return tokenResponse(
+                result, result.message(), jwtProperties.refreshTokenRotationEnabled());
     }
 
     @PostMapping("/logout")
@@ -483,7 +488,7 @@ public class AuthController {
     }
 
     @PostMapping("/password/change")
-    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    @PreAuthorize("hasAuthority('auth:self')")
     public ResponseEntity<ApiResponse<Void>> changePassword(
             @AuthenticationPrincipal Jwt principal,
             @Valid @RequestBody PasswordChangeRequest request) {
@@ -524,13 +529,22 @@ public class AuthController {
     private ResponseEntity<ApiResponse<AuthTokenResponse>> tokenResponse(
             AuthServiceResult result,
             String message) {
+        return tokenResponse(result, message, true);
+    }
+
+    private ResponseEntity<ApiResponse<AuthTokenResponse>> tokenResponse(
+            AuthServiceResult result,
+            String message,
+            boolean refreshTokenChanged) {
         boolean cookieTransport = jwtProperties.transport() == TokenTransport.COOKIE;
         AuthTokenResponse data = new AuthTokenResponse(
                 cookieTransport ? null : result.accessToken(),
                 cookieTransport ? null : result.refreshToken(),
                 cookieTransport ? null : "Bearer",
                 jwtProperties.accessTokenTtl().toSeconds(),
-                UserResponse.from(result.user()));
+                UserResponse.from(
+                        result.user(),
+                        userRoleService.rolesForUser(result.user().getId())));
 
         ResponseEntity.BodyBuilder response = ResponseEntity.status(result.status());
         if (cookieTransport) {
@@ -539,11 +553,13 @@ public class AuthController {
                     result.accessToken(),
                     "/",
                     jwtProperties.accessTokenTtl()).toString());
-            response.header(HttpHeaders.SET_COOKIE, tokenCookie(
-                    jwtProperties.refreshCookieName(),
-                    result.refreshToken(),
-                    "/api/v1/auth",
-                    jwtProperties.refreshTokenTtl()).toString());
+            if (refreshTokenChanged) {
+                response.header(HttpHeaders.SET_COOKIE, tokenCookie(
+                        jwtProperties.refreshCookieName(),
+                        result.refreshToken(),
+                        "/api/v1/auth",
+                        jwtProperties.refreshTokenTtl()).toString());
+            }
         }
 
         return response.body(ApiResponse.success(result.status(), message, data));

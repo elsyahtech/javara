@@ -9,7 +9,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "admin_password_reset_audit")
+@Table(name = "javara_admin_password_reset_audit")
 public class AdminPasswordResetAuditEntity {
     @Id
     @Column(name = "id", nullable = false)

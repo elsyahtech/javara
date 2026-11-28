@@ -12,6 +12,9 @@ below do not require an existing PostgreSQL or Redis installation.
 `make install` can offer to install JDK 25 and Docker/Compose. On macOS,
 Homebrew must already be installed. Linux installation is best-effort; the
 installer prints manual instructions when it cannot install a dependency.
+Linux package installation requires root or `sudo`. If systemd is unavailable,
+start Docker manually before running `make install`; the installer cannot start
+a system service in that environment.
 
 ## Option A: Let JAVARA create local services
 
@@ -85,10 +88,12 @@ make setup
 
 The first prompts select the built-in authentication API, JWT resource-server
 validation, service-to-service authentication, and authentication rate
-limiting. Defaults keep the standard feature set enabled. The setup stops
-before writing configuration if an enabled module is missing a required
-dependency. Redis details are requested only when authentication rate limiting
-is enabled; administrator credentials and SMTP settings are requested only
+limiting, then the organization mode. Defaults keep the standard feature set
+enabled and choose `SINGLE`. Shared multi-tenant mode is not ready for runtime
+use; selecting it writes the choice, but JAVARA will fail fast when started.
+The setup stops before writing configuration if an enabled module is missing a
+required dependency. Redis details are requested only when authentication rate
+limiting is enabled; administrator credentials and SMTP settings are requested only
 when the built-in authentication API is enabled. A JWT key and token transport
 are requested only when resource-server validation is enabled. Token transport
 defaults to `COOKIE` with the authentication API and `BEARER` without it.
@@ -116,6 +121,13 @@ separate ignored configuration files and do not replace the rest of the
 runtime settings. When HTTPS terminates at a reverse proxy, application TLS
 can remain disabled.
 
+`make setup` only writes local runtime configuration; it does not reset the
+database or apply migrations. Flyway creates the schema when `make run` starts
+the application. For a fresh install, use a new empty database or reset the
+disposable local database, including `flyway_schema_history`; dropping only
+the application tables while retaining Flyway history will not rerun the
+already-recorded migrations.
+
 For a CRUD service that should validate compatible JAVARA tokens but not expose
 JAVARA's user sign-in, choose `auth-api: no`, `resource-server: yes`,
 `service-auth: no`, and `rate-limiting: no`. Choose `resource-server: no` only
@@ -129,8 +141,11 @@ Configure authentication security separately when ready:
 make security-setup
 ```
 
-This writes suspicious-authentication detection and response settings to
+This writes session policy and suspicious-authentication settings to
 `config/security.yml`; it does not replace the initial application settings.
+Idle session expiry is enabled by default with a 15-minute timeout, but the
+wizard lets a deployment disable it or choose its own duration. The absolute
+session lifetime remains capped at 12 hours.
 
 Start the API after setup:
 

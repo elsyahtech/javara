@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+run_as_admin() {
+    if (( EUID == 0 )); then
+        "$@"
+    elif command -v sudo >/dev/null 2>&1; then
+        sudo "$@"
+    else
+        printf '%s\n' "Administrator privileges are required; run as root or install sudo." >&2
+        return 1
+    fi
+}
+
 java_is_ready() {
     local java_command=$1
     local compiler="${java_command%/java}/javac"
@@ -42,17 +53,17 @@ case "$(uname -s)" in
         . /etc/os-release
         case "${ID:-} ${ID_LIKE:-}" in
             *debian*|*ubuntu*)
-                sudo apt-get update
-                sudo apt-get install -y openjdk-25-jdk
+                run_as_admin apt-get update
+                run_as_admin apt-get install -y openjdk-25-jdk
                 ;;
             *fedora*|*rhel*|*centos*|*rocky*|*almalinux*)
-                sudo dnf install -y java-25-openjdk-devel
+                run_as_admin dnf install -y java-25-openjdk-devel
                 ;;
             *arch*)
-                sudo pacman -Sy --needed --noconfirm jdk-openjdk
+                run_as_admin pacman -Sy --needed --noconfirm jdk-openjdk
                 ;;
             *opensuse*|*suse*)
-                sudo zypper --non-interactive install java-25-openjdk-devel
+                run_as_admin zypper --non-interactive install java-25-openjdk-devel
                 ;;
             *)
                 printf 'Automatic JDK installation is not configured for "%s". Install JDK 25 manually.\n' \

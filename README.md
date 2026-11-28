@@ -173,7 +173,7 @@ its unit tests under the matching `unit/<domain>` package.
 
 ## Requirements
 
-The project uses the Maven Wrapper. `make install` can install a missing JDK 25 and Docker/Compose after confirmation. On macOS, Homebrew must already be installed. Linux installation is best-effort on Debian/Ubuntu, Fedora, RHEL-compatible distributions, Arch, and openSUSE; unrecognized distributions receive manual setup instructions.
+The project uses the Maven Wrapper. `make install` can install a missing JDK 25 and Docker/Compose after confirmation. On macOS, Homebrew must already be installed. Linux installation is best-effort on Debian/Ubuntu, Fedora, RHEL-compatible distributions, Arch, and openSUSE; unrecognized distributions receive manual setup instructions. Package installation requires root or `sudo`. On Linux systems without an active systemd manager, Docker must already be running or be started manually; `make install` does not try to control a service manager that is unavailable.
 
 ## Local Installation
 
@@ -280,22 +280,24 @@ src/main/resources/db/migration
 
 | Migration | Purpose |
 |---|---|
-| `V1__create_user.sql` | Creates users, active-email uniqueness, and optimistic locking |
-| `V2__create_refresh_tokens.sql` | Creates hashed refresh-token storage |
+| `V1__create_user.sql` | Creates the complete user schema, active-email uniqueness, and optimistic locking |
+| `V2__create_refresh_tokens.sql` | Creates hashed refresh-token and session lifecycle storage and indexes |
 | `V3__create_oauth2_client_credentials.sql` | Adds service-client credentials |
-| `V4__add_session_lifecycle.sql` | Adds refresh-token session lifecycle fields |
-| `V5__add_email_verification.sql` | Adds verified-email state and tokens |
-| `V6__add_admin_password_reset.sql` | Adds administrator password recovery records |
-| `V7__require_support_authorization_for_emergency_recovery.sql` | Requires support authorization for emergency recovery |
-| `V8__track_compromised_password_hashes.sql` | Tracks invalidated credentials |
-| `V9__add_mfa_support.sql` | Adds MFA methods, challenges, passkey storage, and authentication methods |
-| `V10__bind_mfa_challenges_to_password.sql` | Invalidates MFA challenges when the user's password changes |
-| `V11__add_suspicious_authentication_controls.sql` | Adds temporary lockout counters and last successful source fingerprint |
+| `V4__add_email_verification.sql` | Creates email verification token storage and lookup index |
+| `V5__add_admin_password_reset.sql` | Creates administrator password recovery and audit records |
+| `V6__track_compromised_password_hashes.sql` | Tracks invalidated credentials |
+| `V7__create_mfa_support.sql` | Creates MFA methods, password-bound challenges, and passkey storage |
+| `V8__create_tenant_and_role_foundation.sql` | Adds organization and database-backed role foundations |
 
 JAVARA migrations do not insert demo users or other example business data.
 Flyway applies versioned files in this directory at application startup.
 Never edit a migration that has already been applied to a shared database;
 add a new migration instead.
+The fresh-install schema defines each table with its complete set of columns
+when it is created; it does not use `ALTER TABLE` to add or change columns.
+JAVARA-owned tables use the `javara_` prefix from their initial definition.
+This pre-release schema is intended for a fresh, empty database; an older
+database with previous Flyway history must not be used.
 
 For naming rules, a complete products-table migration and seed example, and
 instructions for running sample data only in development, see the
@@ -354,8 +356,11 @@ Base URL:
 Except for `/`, registration, login, MFA challenge verification, refresh, and
 the cookie-mode CSRF endpoint, requests require authentication. MFA challenge
 routes are public only to finish a previously issued challenge. The
-user-management list/create routes are ADMIN-only; ID-based routes require
-the matching USER or an ADMIN.
+user list/create routes require `users:read` or `users:manage`; by default,
+the built-in ADMIN role has those permissions. ID-based routes allow the
+matching user for self-service or an account with the specific management
+permission. Authorization permissions are loaded from PostgreSQL; Redis is
+used for rate limiting, not role lookup.
 
 ### Welcome
 
@@ -455,7 +460,11 @@ MFA configuration and endpoints are documented in the
 [configuration guide](docs/guide/configuration.md#multi-factor-authentication)
 and [API guide](docs/guide/api-usage.md#mfa-login-and-enrollment).
 
-Access tokens expire after 15 minutes by default. Refresh tokens expire after 30 days, are stored in PostgreSQL only as SHA-256 hashes, and are revoked on rotation or logout. Reuse of a revoked refresh token revokes the user's other active refresh tokens. Changing a user's password revokes all of that user's active refresh tokens; already-issued access JWTs remain valid until their short expiry.
+Access tokens expire after 15 minutes by default and are checked against their active server-side session on protected requests. Logout, password changes, account disablement/deletion, and session termination therefore reject an already-issued access token on its next protected request. By default, sessions expire after 15 minutes of inactivity or a maximum session duration of 12 hours from sign-in. `make security-setup` lets deployments configure idle expiry, maximum session duration, and refresh-token rotation. If the maximum session duration is disabled, the refresh-token TTL becomes the session's fixed maximum lifetime from sign-in (30 days by default); refreshing does not extend that deadline. The YAML setting for this option is `absolute-lifetime-enabled`. Refresh-token rotation is enabled by default: a successful refresh returns a new refresh token and invalidates the old one. Deployments can disable rotation, in which case the same refresh token remains in use until its fixed expiry or session revocation; replay detection is then unavailable.
+
+The secure defaults are intended as a production-oriented baseline for ASVS Level 3 practices, not a compliance guarantee. Changing a setting changes the protections active for that deployment; the [configuration guide](docs/guide/configuration.md#what-each-session-setting-does) explains each mode and its trade-offs.
+
+This is intentional: short-lived access tokens reduce the impact of token theft, while refresh tokens avoid unnecessary password prompts as long as the session is still valid. An expired access token may be refreshed; an expired or revoked session may not. These authentication responses do not by themselves mean the server is broken. The [API guide](docs/guide/api-usage.md#what-happens-when-a-token-expires) explains the expected outcomes and client actions for each case.
 
 The access cookie is sent to API routes; the refresh cookie is scoped to `/api/v1/auth`. Cookie mode enables CSRF protection: the SDK obtains the token from `GET /api/v1/auth/csrf` and sends it in `X-XSRF-TOKEN` for POST/PUT/PATCH/DELETE requests. Logout works with the refresh cookie even after the access cookie expires. Cookies are Secure by default; cross-site deployments must configure `SameSite: None`, HTTPS, CORS credentials, and explicit allowed origins.
 
@@ -722,7 +731,7 @@ A partial unique index prevents two non-deleted users from using the same email:
 
 ```sql
 CREATE UNIQUE INDEX idx_users_email_active_unique
-ON users (email)
+ON javara_users (email)
 WHERE deleted_at IS NULL;
 ```
 
@@ -839,10 +848,10 @@ Useful SQL commands:
 
 ```sql
 \dt
-\d users
+\d javara_users
 SELECT * FROM flyway_schema_history;
 SELECT id, email, is_active, deleted_at, version
-FROM users;
+FROM javara_users;
 ```
 
 ## Production Readiness
@@ -871,7 +880,7 @@ registration policy.
 
 ## Known Limitations
 
-- Access JWTs are not revoked immediately by logout; they remain valid until their configured expiry.
+- Access-token revocation depends on a database-backed session check on protected requests; its production load and database-outage behavior have not been load-tested.
 - Authentication rate limiting uses fixed windows keyed by the proxy-resolved client IP.
 - The application returns `503` for limited authentication requests if Redis becomes unavailable after startup; Redis is required at startup in every configuration.
 - Create ignores `request.isActive()` and always creates an active user.
@@ -879,7 +888,7 @@ registration policy.
 - Lock timeout and deadlock retry behavior are not yet standardized.
 - A generic database outage currently is not distinguished from a constraint conflict.
 - Login/refresh tokens are returned in the response only when Bearer transport is configured.
-- The service does not provide tenant isolation, email verification, or password recovery.
+- Shared multi-tenant isolation across application data is not ready; configure the runtime in `SINGLE` mode. Email verification and password-recovery flows are implemented, but remain subject to the ASVS assessment and deployment evidence described in the security documentation.
 
 ## Troubleshooting
 

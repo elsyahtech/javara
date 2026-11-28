@@ -32,6 +32,7 @@ import com.elsyah.tech.javara.service.auth.AuthService;
 import com.elsyah.tech.javara.service.auth.AuthServiceResult;
 import com.elsyah.tech.javara.service.common.ServiceResult;
 import com.elsyah.tech.javara.service.user.UserService;
+import com.elsyah.tech.javara.service.user.UserRoleService;
 import com.elsyah.tech.javara.testsupport.PostgresRedisTestSupport;
 import com.elsyah.tech.javara.utils.security.PasswordHashService;
 
@@ -59,6 +60,9 @@ class UserConcurrentIntegrationTests extends PostgresRedisTestSupport {
     private UserService userService;
 
     @Autowired
+    private UserRoleService userRoleService;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @Autowired
@@ -77,18 +81,20 @@ class UserConcurrentIntegrationTests extends PostgresRedisTestSupport {
     @BeforeEach
     void clearUsers() {
         jdbcTemplate.update("""
-                DELETE FROM refresh_tokens
-                WHERE user_id IN (
-                    SELECT id FROM users
-                    WHERE email LIKE 'concurrent-%'
-                       OR email LIKE 'before-%'
-                       OR email LIKE 'delete-%'
-                       OR email LIKE 'mixed-%'
-                       OR email LIKE 'password-change-%'
+                DELETE FROM javara_refresh_tokens
+                WHERE session_id IN (
+                    SELECT session.id
+                    FROM javara_user_sessions session
+                    JOIN javara_users user_record ON user_record.id = session.user_id
+                    WHERE user_record.email LIKE 'concurrent-%'
+                       OR user_record.email LIKE 'before-%'
+                       OR user_record.email LIKE 'delete-%'
+                       OR user_record.email LIKE 'mixed-%'
+                       OR user_record.email LIKE 'password-change-%'
                 )
                 """);
         jdbcTemplate.update(
-                "DELETE FROM users WHERE email LIKE 'concurrent-%'"
+                "DELETE FROM javara_users WHERE email LIKE 'concurrent-%'"
                         + " OR email LIKE 'before-%'"
                         + " OR email LIKE 'delete-%'"
                         + " OR email LIKE 'mixed-%'"
@@ -138,7 +144,7 @@ class UserConcurrentIntegrationTests extends PostgresRedisTestSupport {
         user.setEmail("before-" + UUID.randomUUID() + "@example.com");
         user.setPassword("initial-password");
         user.setIsActive(true);
-        repository.saveAndFlush(user);
+        saveUserWithDefaultRoles(user);
 
         Callable<HttpStatus> firstUpdate = () -> userService.updateUser(
                 user.getId(),
@@ -224,7 +230,7 @@ class UserConcurrentIntegrationTests extends PostgresRedisTestSupport {
         user.setEmail("delete-" + UUID.randomUUID() + "@example.com");
         user.setPassword("password123");
         user.setIsActive(true);
-        repository.saveAndFlush(user);
+        saveUserWithDefaultRoles(user);
 
         Callable<HttpStatus> firstDelete = () ->
                 userService.deleteUser(user.getId()).status();
@@ -256,7 +262,7 @@ class UserConcurrentIntegrationTests extends PostgresRedisTestSupport {
         user.setEmail("mixed-" + UUID.randomUUID() + "@example.com");
         user.setPassword("initial-password");
         user.setIsActive(true);
-        repository.saveAndFlush(user);
+        saveUserWithDefaultRoles(user);
 
         Callable<HttpStatus> update = () -> userService.updateUser(
                 user.getId(),
@@ -286,5 +292,11 @@ class UserConcurrentIntegrationTests extends PostgresRedisTestSupport {
         } catch (Exception exception) {
             throw new AssertionError("Concurrent request failed", exception);
         }
+    }
+
+    private UserEntity saveUserWithDefaultRoles(UserEntity user) {
+        UserEntity savedUser = repository.saveAndFlush(user);
+        userRoleService.assignInitialRoles(savedUser.getId(), List.of("USER"));
+        return savedUser;
     }
 }

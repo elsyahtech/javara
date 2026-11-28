@@ -12,15 +12,13 @@ import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
 import jakarta.persistence.Id;
 import jakarta.persistence.Version;
 
 /**
- * UserEntity is a JPA entity that represents the "users" table in the database. 
+ * UserEntity is a JPA entity that represents the "javara_users" table in the database.
  * It contains fields for user ID, email, password, active status, and timestamps for creation, update, and deletion. 
  * The class includes annotations to define the table structure and constraints.
  * 
@@ -30,7 +28,7 @@ import jakarta.persistence.Version;
  * @contact https://www.linkedin.com/in/elmansyah
  */
 @Entity 
-@Table (name = "users")
+@Table (name = "javara_users")
 @SQLRestriction("deleted_at IS NULL")
 public class UserEntity {
     /* 
@@ -41,7 +39,7 @@ public class UserEntity {
     @Column(name = "id", nullable = false)
     private UUID id;
 
-    /* Email is required and unique among users that have not been soft-deleted. */
+    /* Email is required and unique among javara_users that have not been soft-deleted. */
     @Column (name = "email", nullable = false)
     private String email;
 
@@ -82,17 +80,13 @@ public class UserEntity {
 
     @ElementCollection
     @CollectionTable(
-            name = "user_compromised_password_hashes",
+            name = "javara_user_compromised_password_hashes",
             joinColumns = @JoinColumn(name = "user_id"))
     @Column(name = "password_hash", nullable = false, length = 255)
     private List<String> compromisedPasswordHashes = new ArrayList<>();
 
     @Column(name = "pending_email")
     private String pendingEmail;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "role", nullable = false, length = 16)
-    private UserRole role = UserRole.USER;
 
     /* createdAt is automatically set to the current timestamp when the user is created. It cannot be null and cannot be updated. */
     @CreationTimestamp 
@@ -174,9 +168,6 @@ public class UserEntity {
 
     public String getPendingEmail() { return pendingEmail; }
     public void setPendingEmail(String pendingEmail) { this.pendingEmail = pendingEmail; }
-
-    public UserRole getRole() { return role; }
-    public void setRole(UserRole role) { this.role = role; }
 
     /* Getters and setters for the fields. These methods allow access to the private fields of the class. */
     public Instant getCreatedAt() { return createdAt; }

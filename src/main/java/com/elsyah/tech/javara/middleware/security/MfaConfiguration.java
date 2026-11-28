@@ -2,6 +2,7 @@ package com.elsyah.tech.javara.middleware.security;
 
 import java.net.URI;
 import java.util.Set;
+import javax.sql.DataSource;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -9,7 +10,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
-import org.springframework.jdbc.core.JdbcOperations;
 
 import com.elsyah.tech.javara.entity.auth.MfaMethod;
 import com.elsyah.tech.javara.service.auth.MfaOtpDeliveryChannel;
@@ -47,13 +47,14 @@ public class MfaConfiguration {
 
     @Bean
     PublicKeyCredentialUserEntityRepository publicKeyCredentialUserEntityRepository(
-            JdbcOperations jdbcOperations) {
-        return new JdbcPublicKeyCredentialUserEntityRepository(jdbcOperations);
+            DataSource dataSource) {
+        return new JdbcPublicKeyCredentialUserEntityRepository(
+                new JavaraPrefixedJdbcTemplate(dataSource));
     }
 
     @Bean
-    UserCredentialRepository userCredentialRepository(JdbcOperations jdbcOperations) {
-        return new JdbcUserCredentialRepository(jdbcOperations);
+    UserCredentialRepository userCredentialRepository(DataSource dataSource) {
+        return new JdbcUserCredentialRepository(new JavaraPrefixedJdbcTemplate(dataSource));
     }
 
     @Bean

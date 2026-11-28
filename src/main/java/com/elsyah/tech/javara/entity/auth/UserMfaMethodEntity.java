@@ -11,7 +11,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "user_mfa_methods")
+@Table(name = "javara_user_mfa_methods")
 public class UserMfaMethodEntity {
     @Id
     @Column(name = "id", nullable = false)

@@ -1,14 +1,6 @@
-ALTER TABLE users
-    ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT TRUE,
-    ADD COLUMN pending_email VARCHAR(255);
-
-CREATE UNIQUE INDEX idx_users_pending_email_unique
-    ON users (pending_email)
-    WHERE pending_email IS NOT NULL AND deleted_at IS NULL;
-
-CREATE TABLE email_verification_tokens (
+CREATE TABLE javara_email_verification_tokens (
     id UUID NOT NULL,
-    user_id UUID NOT NULL REFERENCES users(id),
+    user_id UUID NOT NULL REFERENCES javara_users(id),
     token_hash CHAR(64) NOT NULL UNIQUE,
     purpose VARCHAR(24) NOT NULL
         CHECK (purpose IN ('REGISTRATION', 'EMAIL_CHANGE')),
@@ -24,4 +16,4 @@ CREATE TABLE email_verification_tokens (
 );
 
 CREATE INDEX idx_email_verification_tokens_user_purpose
-    ON email_verification_tokens (user_id, purpose);
+    ON javara_email_verification_tokens (user_id, purpose);

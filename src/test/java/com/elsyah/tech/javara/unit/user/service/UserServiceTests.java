@@ -35,13 +35,16 @@ import org.springframework.http.HttpStatus;
 import com.elsyah.tech.javara.entity.user.UserEntity;
 import com.elsyah.tech.javara.projection.user.UserSelectColumn;
 import com.elsyah.tech.javara.repository.auth.RefreshTokenRepository;
+import com.elsyah.tech.javara.repository.auth.UserSessionRepository;
 import com.elsyah.tech.javara.repository.user.UserRepository;
 import com.elsyah.tech.javara.request.user.UserRequest;
 import com.elsyah.tech.javara.request.user.UserUpdateRequest;
 import com.elsyah.tech.javara.request.auth.LoginRequest;
 import com.elsyah.tech.javara.service.user.PasswordPolicyService;
 import com.elsyah.tech.javara.service.user.UserService;
+import com.elsyah.tech.javara.service.user.UserRoleService;
 import com.elsyah.tech.javara.service.auth.SuspiciousAuthenticationService;
+import com.elsyah.tech.javara.service.auth.SessionRevocationService;
 import com.elsyah.tech.javara.service.common.ServiceResult;
 import com.elsyah.tech.javara.service.email.EmailNotificationService;
 import com.elsyah.tech.javara.service.email.EmailVerificationService;
@@ -68,8 +71,10 @@ class UserServiceTests {
         return new UserService(
                 repository,
                 new PasswordHashService(),
-                mock(RefreshTokenRepository.class),
+                new SessionRevocationService(
+                        mock(UserSessionRepository.class), mock(RefreshTokenRepository.class)),
                 allowedPasswordPolicy(),
+                mock(UserRoleService.class),
                 mock(EmailNotificationService.class),
                 mock(EmailVerificationService.class),
                 mock(SuspiciousAuthenticationService.class),
@@ -82,8 +87,10 @@ class UserServiceTests {
         return new UserService(
                 repository,
                 passwordHashService,
-                mock(RefreshTokenRepository.class),
+                new SessionRevocationService(
+                        mock(UserSessionRepository.class), mock(RefreshTokenRepository.class)),
                 allowedPasswordPolicy(),
+                mock(UserRoleService.class),
                 mock(EmailNotificationService.class),
                 mock(EmailVerificationService.class),
                 mock(SuspiciousAuthenticationService.class),
@@ -121,8 +128,10 @@ class UserServiceTests {
         UserService service = new UserService(
                 repository,
                 new PasswordHashService(),
-                mock(RefreshTokenRepository.class),
+                new SessionRevocationService(
+                        mock(UserSessionRepository.class), mock(RefreshTokenRepository.class)),
                 passwordPolicyService,
+                mock(UserRoleService.class),
                 mock(EmailNotificationService.class),
                 mock(EmailVerificationService.class),
                 mock(SuspiciousAuthenticationService.class),
@@ -296,8 +305,10 @@ class UserServiceTests {
         ServiceResult<UserEntity> result = new UserService(
                 repository,
                 passwordHashService,
-                refreshTokenRepository,
+                new SessionRevocationService(
+                        mock(UserSessionRepository.class), refreshTokenRepository),
                 allowedPasswordPolicy(),
+                mock(UserRoleService.class),
                 mock(EmailNotificationService.class),
                 mock(EmailVerificationService.class),
                 mock(SuspiciousAuthenticationService.class),
@@ -378,8 +389,10 @@ class UserServiceTests {
         ServiceResult<UserEntity> result = new UserService(
                 repository,
                 passwordHashService,
-                refreshTokenRepository,
+                new SessionRevocationService(
+                        mock(UserSessionRepository.class), refreshTokenRepository),
                 allowedPasswordPolicy(),
+                mock(UserRoleService.class),
                 mock(EmailNotificationService.class),
                 mock(EmailVerificationService.class),
                 mock(SuspiciousAuthenticationService.class),
@@ -405,8 +418,10 @@ class UserServiceTests {
         UserService service = new UserService(
                 repository,
                 passwordHashService,
-                refreshTokenRepository,
+                new SessionRevocationService(
+                        mock(UserSessionRepository.class), refreshTokenRepository),
                 allowedPasswordPolicy(),
+                mock(UserRoleService.class),
                 mock(EmailNotificationService.class),
                 mock(EmailVerificationService.class),
                 mock(SuspiciousAuthenticationService.class),
@@ -434,8 +449,10 @@ class UserServiceTests {
         ServiceResult<Void> result = new UserService(
                 repository,
                 passwordHashService,
-                refreshTokenRepository,
+                new SessionRevocationService(
+                        mock(UserSessionRepository.class), refreshTokenRepository),
                 allowedPasswordPolicy(),
+                mock(UserRoleService.class),
                 mock(EmailNotificationService.class),
                 mock(EmailVerificationService.class),
                 mock(SuspiciousAuthenticationService.class),
@@ -462,8 +479,10 @@ class UserServiceTests {
         ServiceResult<Void> result = new UserService(
                 repository,
                 passwordHashService,
-                refreshTokenRepository,
+                new SessionRevocationService(
+                        mock(UserSessionRepository.class), refreshTokenRepository),
                 allowedPasswordPolicy(),
+                mock(UserRoleService.class),
                 mock(EmailNotificationService.class),
                 mock(EmailVerificationService.class),
                 mock(SuspiciousAuthenticationService.class),
@@ -491,8 +510,10 @@ class UserServiceTests {
         ServiceResult<Void> result = new UserService(
                 repository,
                 passwordHashService,
-                refreshTokenRepository,
+                new SessionRevocationService(
+                        mock(UserSessionRepository.class), refreshTokenRepository),
                 allowedPasswordPolicy(),
+                mock(UserRoleService.class),
                 mock(EmailNotificationService.class),
                 mock(EmailVerificationService.class),
                 mock(SuspiciousAuthenticationService.class),
@@ -525,8 +546,10 @@ class UserServiceTests {
         ServiceResult<Void> result = new UserService(
                 repository,
                 passwordHashService,
-                refreshTokenRepository,
+                new SessionRevocationService(
+                        mock(UserSessionRepository.class), refreshTokenRepository),
                 passwordPolicyService,
+                mock(UserRoleService.class),
                 mock(EmailNotificationService.class),
                 mock(EmailVerificationService.class),
                 mock(SuspiciousAuthenticationService.class),
@@ -558,6 +581,27 @@ class UserServiceTests {
     }
 
     @Test
+    void updateUserCannotDisableFinalRoleManager() {
+        UserRepository repository = mock(UserRepository.class);
+        UserEntity user = new UserEntity();
+        user.setId(uuid("user-1"));
+        user.setEmail("admin@example.com");
+        user.setIsActive(true);
+        when(repository.findByIdForUpdate(uuid("user-1"))).thenReturn(Optional.of(user));
+        when(repository.existsByEmailAndIdNot("admin@example.com", uuid("user-1"))).thenReturn(false);
+        when(repository.hasPermission(uuid("user-1"), "roles:manage")).thenReturn(true);
+        when(repository.countActiveRoleManagers()).thenReturn(1L);
+
+        ServiceResult<UserEntity> result = newService(repository).updateUser(
+                uuid("user-1"), new UserUpdateRequest("admin@example.com", false));
+
+        assertEquals(HttpStatus.CONFLICT, result.status());
+        assertEquals("The final role manager cannot be disabled", result.message());
+        assertTrue(user.getIsActive());
+        verify(repository, never()).saveAndFlush(any());
+    }
+
+    @Test
     void updateUserRejectsPasswordChange() {
         UserRepository repository = mock(UserRepository.class);
 
@@ -583,6 +627,23 @@ class UserServiceTests {
         assertEquals("User deleted successfully", result.message());
         assertEquals(NOW, user.getDeletedAt());
         verify(repository).saveAndFlush(user);
+    }
+
+    @Test
+    void deleteUserCannotDeleteFinalRoleManager() {
+        UserRepository repository = mock(UserRepository.class);
+        UserEntity user = new UserEntity();
+        user.setId(uuid("user-1"));
+        when(repository.findByIdForUpdate(uuid("user-1"))).thenReturn(Optional.of(user));
+        when(repository.hasPermission(uuid("user-1"), "roles:manage")).thenReturn(true);
+        when(repository.countActiveRoleManagers()).thenReturn(1L);
+
+        ServiceResult<UserEntity> result = newService(repository).deleteUser(uuid("user-1"));
+
+        assertEquals(HttpStatus.CONFLICT, result.status());
+        assertEquals("The final role manager cannot be deleted", result.message());
+        assertNull(user.getDeletedAt());
+        verify(repository, never()).saveAndFlush(any());
     }
 
     // Verifies that deleting a missing user returns not-found without saving.

@@ -1,4 +1,4 @@
-CREATE TABLE oauth2_registered_client (
+CREATE TABLE javara_oauth2_registered_client (
     id varchar(100) NOT NULL PRIMARY KEY,
     client_id varchar(100) NOT NULL,
     client_id_issued_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -15,7 +15,7 @@ CREATE TABLE oauth2_registered_client (
     CONSTRAINT uq_oauth2_registered_client_client_id UNIQUE (client_id)
 );
 
-CREATE TABLE oauth2_authorization (
+CREATE TABLE javara_oauth2_authorization (
     id varchar(100) NOT NULL PRIMARY KEY,
     registered_client_id varchar(100) NOT NULL,
     principal_name varchar(200) NOT NULL,
@@ -52,11 +52,11 @@ CREATE TABLE oauth2_authorization (
 );
 
 CREATE INDEX idx_oauth2_authorization_registered_client_id
-    ON oauth2_authorization (registered_client_id);
+    ON javara_oauth2_authorization (registered_client_id);
 CREATE INDEX idx_oauth2_authorization_principal_name
-    ON oauth2_authorization (principal_name);
+    ON javara_oauth2_authorization (principal_name);
 
-CREATE TABLE oauth2_authorization_consent (
+CREATE TABLE javara_oauth2_authorization_consent (
     registered_client_id varchar(100) NOT NULL,
     principal_name varchar(200) NOT NULL,
     authorities varchar(1000) NOT NULL,

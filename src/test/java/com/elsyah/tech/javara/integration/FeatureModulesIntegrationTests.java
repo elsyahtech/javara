@@ -47,6 +47,9 @@ class FeatureModulesIntegrationTests extends PostgresRedisTestSupport {
         mockMvc.perform(get("/api/v1/users")
                         .header("Authorization", "Bearer invalid"))
                 .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/roles")
+                        .header("Authorization", "Bearer invalid"))
+                .andExpect(status().isNotFound());
         mockMvc.perform(post("/api/v1/service-clients")
                         .header("Authorization", "Bearer invalid"))
                 .andExpect(status().isNotFound());

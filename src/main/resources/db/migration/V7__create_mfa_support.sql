@@ -1,6 +1,6 @@
-CREATE TABLE user_mfa_methods (
+CREATE TABLE javara_user_mfa_methods (
     id UUID PRIMARY KEY,
-    user_id UUID NOT NULL REFERENCES users(id),
+    user_id UUID NOT NULL REFERENCES javara_users(id),
     method VARCHAR(24) NOT NULL
         CHECK (method IN ('EMAIL_OTP', 'SMS_OTP', 'WHATSAPP_OTP', 'WEBAUTHN')),
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
@@ -11,17 +11,18 @@ CREATE TABLE user_mfa_methods (
 );
 
 CREATE UNIQUE INDEX idx_user_mfa_methods_preferred
-    ON user_mfa_methods (user_id)
+    ON javara_user_mfa_methods (user_id)
     WHERE enabled = TRUE AND preferred = TRUE;
 
-CREATE TABLE mfa_challenges (
+CREATE TABLE javara_mfa_challenges (
     id UUID PRIMARY KEY,
-    user_id UUID NOT NULL REFERENCES users(id),
+    user_id UUID NOT NULL REFERENCES javara_users(id),
     purpose VARCHAR(32) NOT NULL
         CHECK (purpose IN ('LOGIN', 'EMAIL_ENROLLMENT', 'PASSKEY_ENROLLMENT', 'REQUIRED_ENROLLMENT')),
     method VARCHAR(24) NOT NULL
         CHECK (method IN ('EMAIL_OTP', 'SMS_OTP', 'WHATSAPP_OTP', 'WEBAUTHN')),
     code_verifier VARCHAR(64),
+    password_hash_digest VARCHAR(64) NOT NULL,
     options_json TEXT,
     attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
     expires_at TIMESTAMPTZ NOT NULL,
@@ -29,18 +30,18 @@ CREATE TABLE mfa_challenges (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_mfa_challenges_expires_at ON mfa_challenges (expires_at);
-CREATE INDEX idx_mfa_challenges_user_id ON mfa_challenges (user_id);
+CREATE INDEX idx_mfa_challenges_expires_at ON javara_mfa_challenges (expires_at);
+CREATE INDEX idx_mfa_challenges_user_id ON javara_mfa_challenges (user_id);
 
-CREATE TABLE user_entities (
+CREATE TABLE javara_user_entities (
     id VARCHAR(1000) PRIMARY KEY,
     name VARCHAR(100) NOT NULL UNIQUE,
     display_name VARCHAR(200)
 );
 
-CREATE TABLE user_credentials (
+CREATE TABLE javara_user_credentials (
     credential_id VARCHAR(1000) PRIMARY KEY,
-    user_entity_user_id VARCHAR(1000) NOT NULL REFERENCES user_entities(id),
+    user_entity_user_id VARCHAR(1000) NOT NULL REFERENCES javara_user_entities(id),
     public_key BYTEA NOT NULL,
     signature_count BIGINT,
     uv_initialized BOOLEAN,
@@ -56,7 +57,4 @@ CREATE TABLE user_credentials (
 );
 
 CREATE INDEX idx_user_credentials_user_id
-    ON user_credentials (user_entity_user_id);
-
-ALTER TABLE refresh_tokens
-    ADD COLUMN authentication_methods VARCHAR(100) NOT NULL DEFAULT 'pwd';
+    ON javara_user_credentials (user_entity_user_id);
